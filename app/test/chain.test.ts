@@ -6,6 +6,7 @@ import { MIN_SECONDS_LEFT, listLiveWindows, pickWindow, tradeableAssets } from "
 import { ONE_COLLATERAL, entryPriceFrom, outcomeIdxFor, placeCall, sideFor } from "../src/chain/place.ts";
 import { pollSettlements, readSettlement } from "../src/chain/settle.ts";
 import { redeemCall } from "../src/chain/redeem.ts";
+import { hashOf, receiptSucceeded } from "../src/chain/receipt.ts";
 import type { ChainMarket, Exchange, LiveWindow, OrderBook } from "../src/chain/types.ts";
 
 const MARKET = "0xmarket" as `0x${string}`;
@@ -36,6 +37,7 @@ function chainMarket(over: Partial<ChainMarket> = {}): ChainMarket {
 
 interface FakeOptions {
   market?: ChainMarket;
+  redeemReceipt?: any;
   book?: OrderBook;
   fills?: { quantityFilled: bigint; fillPrice: bigint }[];
   held?: bigint;
@@ -60,7 +62,7 @@ function fakeExchange(o: FakeOptions = {}) {
       },
       redeem: async (p) => {
         sent.push(p);
-        return { transactionHash: "0xredeem" };
+        return o.redeemReceipt ?? { status: "success", transactionHash: "0xredeem" };
       },
     },
   };
@@ -239,4 +241,36 @@ test("a winning call with no position left claims nothing", async () => {
     { marketId: MARKET, result: "up", winningOutcome: 0 });
   assert.equal(r.skipped, "no-position");
   assert.equal(sent.length, 0);
+});
+
+// --- receipts: mined is not the same as worked -------------------------------
+
+test("every shape the status field arrives in is understood", () => {
+  assert.equal(receiptSucceeded({ status: "success" }), true);
+  assert.equal(receiptSucceeded({ status: 1n }), true);
+  assert.equal(receiptSucceeded({ status: 1 }), true);
+  assert.equal(receiptSucceeded({ status: "reverted" }), false, "the string is truthy but the transaction failed");
+  assert.equal(receiptSucceeded({ status: 0n }), false);
+  assert.equal(receiptSucceeded({ status: 0 }), false);
+  assert.equal(receiptSucceeded({}), false, "a receipt with no status is not proof of anything");
+  assert.equal(receiptSucceeded(null), false);
+});
+
+test("the hash is found wherever the SDK put it", () => {
+  assert.equal(hashOf({ transactionHash: "0xa" }), "0xa");
+  assert.equal(hashOf({ hash: "0xb" }), "0xb");
+  assert.equal(hashOf({ receipt: { transactionHash: "0xc" } }), "0xc");
+  assert.equal(hashOf({}), null);
+});
+
+test("a redemption that reverted is reported as reverted, not as a payout", async () => {
+  const { ex } = fakeExchange({
+    held: 1_000n,
+    redeemReceipt: { status: "reverted", transactionHash: "0xdead" },
+  });
+  const r = await redeemCall(ex, { direction: "up", marketId: MARKET } as any,
+    { marketId: MARKET, result: "up", winningOutcome: 0 });
+  assert.equal(r.skipped, "reverted");
+  assert.equal(r.redeemed, 0n, "nothing came back, whatever the receipt looked like");
+  assert.equal(r.txHash, "0xdead", "the hash is kept so the failure can be looked up");
 });

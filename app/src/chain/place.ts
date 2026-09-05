@@ -5,6 +5,7 @@
 
 import { ORDER_TYPE, quoteBinaryStakeOverBook } from "@somnia-chain/markets-sdk";
 import { currentWindowId } from "./clock.ts";
+import { hashOf } from "./receipt.ts";
 import type { Direction, Exchange, LiveWindow, PlacedCall } from "./types.ts";
 
 /** Collateral is TestUSDC with 6 decimals, so one whole unit is 1_000_000. */
@@ -76,7 +77,9 @@ export async function placeCall(
   const weighted = fills.reduce((n, f) => n + BigInt(f.fillPrice) * BigInt(f.quantityFilled ?? 0n), 0n);
   const averageYes = weighted / shares;
 
-  const txHash = String(res.transactionHash ?? res.hash ?? "");
+  // A non-empty fill is itself proof the order executed, so the receipt status
+  // adds nothing here that the fills have not already said.
+  const txHash = hashOf(res) ?? "";
   return {
     callId: txHash,
     marketId: window.marketId,

@@ -6,13 +6,14 @@
 
 import type { Exchange, PlacedCall, Settlement } from "./types.ts";
 import { outcomeIdxFor } from "./place.ts";
+import { hashOf, receiptSucceeded } from "./receipt.ts";
 
 export interface Redemption {
   marketId: `0x${string}`;
   redeemed: bigint;
   txHash: string | null;
   /** Why nothing was claimed, when nothing was. */
-  skipped?: "lost" | "no-position";
+  skipped?: "lost" | "no-position" | "reverted";
 }
 
 /**
@@ -38,11 +39,14 @@ export async function redeemCall(
   if (held <= 0n) return { marketId: call.marketId, redeemed: 0n, txHash: null, skipped: "no-position" };
 
   const res = await ex.trader.redeem({ marketId: call.marketId, amount: held, outcomeIdx });
-  return {
-    marketId: call.marketId,
-    redeemed: held,
-    txHash: String(res?.transactionHash ?? res?.hash ?? "") || null,
-  };
+
+  // Mined is not the same as worked. A redemption that reverted still returns a
+  // receipt, and treating it as a payout would tell the player their money came
+  // back when it did not.
+  if (!receiptSucceeded(res)) {
+    return { marketId: call.marketId, redeemed: 0n, txHash: hashOf(res), skipped: "reverted" };
+  }
+  return { marketId: call.marketId, redeemed: held, txHash: hashOf(res) };
 }
 
 /** Redeem every settled call that is worth claiming. */

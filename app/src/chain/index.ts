@@ -4,4 +4,5 @@ export * from "./windows.ts";
 export * from "./place.ts";
 export * from "./settle.ts";
 export * from "./redeem.ts";
+export * from "./receipt.ts";
 export * from "./exchange.ts";
