@@ -9,7 +9,7 @@ import { SOMNIA_TESTNET_ADDRESSES } from "@somnia-chain/markets-sdk";
 import { dump, fmtUsdc, iso, makeExchange, shutdown, txLink } from "./client.ts";
 
 const POLL_SECONDS = 30;
-const MAX_WAIT_MINUTES = 20;
+const MAX_WAIT_MINUTES = 75;
 
 const ex = makeExchange();
 const me = ex.walletAddress as `0x${string}`;

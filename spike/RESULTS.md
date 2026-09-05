@@ -19,7 +19,7 @@ built around.
 | Discovery | 12 live markets, 8 of them Up/Down |
 | Placement | Both calls filled on the first attempt |
 | Settlement | Resolved 2 seconds after the window closed |
-| Redemption | See the run log at the bottom |
+| Redemption | Winner claimed in one transaction, loser needed none |
 
 ## The finding that changes the plan
 
@@ -116,4 +116,34 @@ Both on the hour window ending 2026-09-05T16:00:00Z. Explorer:
 
 ## Redemption run
 
-Filled in when `redeem.ts` runs after the window closes.
+Run at 16:00:30 UTC, thirty seconds after the window closed. Both markets were
+already final, so the poll loop never ran a second pass.
+
+| Call | Entry | Outcome | Redeemed |
+|---|---|---|---|
+| BTC Up | 0.585 | `winningOutcome` 0, won | 1.658 tUSDC |
+| ETH Down | 0.364 | `winningOutcome` 0, lost | nothing to claim |
+
+Redemption transaction:
+`0x3864390f905bf67dc5de559ee0c2a318c84dfbbc98b18f1efca78c038cb46ed2`
+
+Collateral moved 9998.0331 to 9999.6911 tUSDC. The two calls together staked
+1.9669 and returned 1.6580, which is the shape the game expects: the player's
+own money is at risk on the market, while the farm reward depends only on being
+right, never on the size of the stake.
+
+Three things this confirms for the adapter:
+
+- The winner redeems for its full share count at one collateral each, so the
+  payout is the fill quantity, not the stake.
+- A losing side has no position left to claim and needs no transaction at all.
+- Reading `winningOutcome` against the call's own outcome index is the whole
+  won-or-lost decision. Both markets returned outcome 0 here, which is why the
+  Up call won and the Down call lost.
+
+## Confidence for the build
+
+Every link the game depends on has now run against the real chain: fund, find a
+market, place a direction call at a fixed stake, wait for settlement, redeem.
+The one path still unproven is the void, because no voided market has appeared
+to test against.
