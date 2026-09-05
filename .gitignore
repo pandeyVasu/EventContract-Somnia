@@ -9,8 +9,9 @@ reference/
 .claude/
 .playwright-mcp/
 
-# Local design notes. Never published.
+# Local design notes and agent instructions. Never published.
 farm-game-*.md
+CLAUDE.md
 
 *.pem
 *.key
