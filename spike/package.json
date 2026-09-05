@@ -1,0 +1,26 @@
+{
+  "name": "farm-spike",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway node scripts that prove the dreamDEX Event Contract path on Somnia testnet.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "faucet": "node --env-file=../.env src/faucet.ts",
+    "discover": "node --env-file=../.env src/discover.ts",
+    "resolution": "node --env-file=../.env src/resolution.ts",
+    "place": "node --env-file=../.env src/place.ts",
+    "redeem": "node --env-file=../.env src/redeem.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@somnia-chain/markets-sdk": "^0.29.0",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.9.3"
+  }
+}
