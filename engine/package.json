@@ -1,0 +1,19 @@
+{
+  "name": "farm-engine",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Pure, deterministic game-rules engine for the farm game. No chain, no UI.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "sim": "node sim/run.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+.env.*
+
+# Local-only: planning notes, reference material, agent config. Never published.
+context/
+reference/
+.claude/
+.playwright-mcp/
+
+# Local design notes. Never published.
+farm-game-*.md
+
+*.pem
+*.key
+credentials*
