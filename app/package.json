@@ -1,0 +1,23 @@
+{
+  "name": "farm-app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The farm game: React UI over the engine, with a thin adapter onto dreamDEX Event Contracts.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@somnia-chain/markets-sdk": "^0.29.0",
+    "farm-engine": "*",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.9.3"
+  }
+}
