@@ -1,8 +1,9 @@
 // Season simulator. Player archetypes play 28 days of BTC/ETH 15-minute windows
-// against the pure engine, under SPEC rules and FIXED rules. Prints what each
-// archetype ends the season with. Deterministic: seeded PRNG.
+// against the pure engine, under SPEC, FIXED and LOCKED rules. Prints what each
+// archetype ends the season with and checks the LOCKED calibration gate.
+// Deterministic: seeded PRNG. `node sim/run.ts [seed]`.
 
-import { SPEC_RULES, FIXED_RULES, upgradeFrom, type Rules, type Direction } from "../src/rules.ts";
+import { SPEC_RULES, FIXED_RULES, LOCKED_RULES, upgradeFrom, type Rules, type Direction } from "../src/rules.ts";
 import { initialState, applySafe, available, reduce } from "../src/engine.ts";
 import { farmValue, hitRate } from "../src/score.ts";
 import type { GameState, Player, Event } from "../src/types.ts";
@@ -11,6 +12,8 @@ const DAYS = 28;
 const WINDOWS_PER_DAY = 96;
 const ASSETS = ["BTC", "ETH"];
 const VOID_RATE = 0.02;
+const ENTRY_MIN = 0.35;   // entry price (probability of the chosen side) sampled uniformly per call
+const ENTRY_MAX = 0.65;
 
 function mulberry32(seed: number) {
   return () => {
@@ -76,7 +79,7 @@ function spendGreedy(rules: Rules, state: GameState, pid: string): GameState {
   return s;
 }
 
-function simulate(rules: Rules, seed: number): GameState {
+export function simulate(rules: Rules, seed: number): GameState {
   const rng = mulberry32(seed);
   let s = initialState(0);
   for (const a of ARCHETYPES) s = reduce(rules, s, { type: "PLAYER_JOIN", playerId: a.id });
@@ -115,7 +118,7 @@ function simulate(rules: Rules, seed: number): GameState {
         } else {
           const truth = o.result === "void" ? (rng() < 0.5 ? "up" : "down") : o.result;
           const acc = a.snipe ? 0.95 : a.hitRate;
-          const price = a.snipe ? 0.95 : 0.5;
+          const price = a.snipe ? 0.95 : ENTRY_MIN + rng() * (ENTRY_MAX - ENTRY_MIN);
           const wanted = a.pickDirection(s.players[a.id]!, rng);
           // A player with hit rate h is right with probability h regardless of what they "wanted";
           // the wanted direction only matters when they are right (it is what they called).
@@ -136,6 +139,22 @@ function simulate(rules: Rules, seed: number): GameState {
   return s;
 }
 
+/** The plan's calibration gate, as [name, pass, detail] rows. */
+export function calibrationGate(rules: Rules, s: GameState): [string, boolean, string][] {
+  const casual = s.players["casual-55%"]!;
+  const sharp = s.players["sharp-65%"]!;
+  const wheat = (p: Player) => p.farms.find((f) => f.template === "wheat")!;
+  const expiryLoss = (p: Player) => (p.stats.coinsEarned === 0 ? 0 : p.stats.coinsExpired / p.stats.coinsEarned);
+  const sharpAllEquipment = Object.keys(rules.equipment).every((e) => wheat(sharp).equipment.includes(e as never));
+  return [
+    ["casual 55% (4 calls/day) reaches Wheat T4", wheat(casual).tier >= 4, `tier ${wheat(casual).tier}`],
+    ["sharp 65% (8 calls/day) finishes Wheat T5", wheat(sharp).tier >= 5, `tier ${wheat(sharp).tier}`],
+    ["sharp 65% owns all equipment", sharpAllEquipment, wheat(sharp).equipment.join(",") || "none"],
+    ["casual coin expiry loss < 15%", expiryLoss(casual) < 0.15, `${(expiryLoss(casual) * 100).toFixed(1)}%`],
+    ["sharp coin expiry loss < 15%", expiryLoss(sharp) < 0.15, `${(expiryLoss(sharp) * 100).toFixed(1)}%`],
+  ];
+}
+
 function report(label: string, rules: Rules, s: GameState) {
   console.log(`\n=== ${label} ===`);
   const rows = Object.values(s.players).map((p) => ({
@@ -148,32 +167,44 @@ function report(label: string, rules: Rules, s: GameState) {
     spent: p.stats.coinsSpent,
     expired: +p.stats.coinsExpired.toFixed(1),
     time: +p.stats.timeEarned.toFixed(1),
-    tApplied: p.stats.timeApplied,
+    tApplied: +p.stats.timeApplied.toFixed(1),
     tLost: +p.stats.timeLost.toFixed(1),
+    bank: +p.timeBank.toFixed(1),
     rejected: Object.entries(p.stats.rejected).map(([k, v]) => `${k}:${v}`).join(",") || "-",
   }));
   console.table(rows);
 }
 
-const seed = Number(process.argv[2] ?? 42);
-report("SPEC rules (as written)", SPEC_RULES, simulate(SPEC_RULES, seed));
-report("FIXED rules (no hedge, entry <= 0.65)", FIXED_RULES, simulate(FIXED_RULES, seed));
+// CLI entry point. Importing this module (see calibrate.ts) runs nothing.
+if (process.argv[1]?.replaceAll("\\", "/").endsWith("sim/run.ts")) {
+  const seed = Number(process.argv[2] ?? 42);
+  report("SPEC rules (as written)", SPEC_RULES, simulate(SPEC_RULES, seed));
+  report("FIXED rules (no hedge, entry <= 0.65)", FIXED_RULES, simulate(FIXED_RULES, seed));
+  const locked = simulate(LOCKED_RULES, seed);
+  report("LOCKED rules (shipping: 1-week expiry, risk-scaled, Time bank, void refund)", LOCKED_RULES, locked);
 
-// Expiry sweep: how long must a coin live before the cost curve is reachable at all?
-console.log("\n=== Expiry sweep (FIXED rules): tiers reached per archetype ===");
-const sweep: Record<string, Record<string, string>> = {};
-for (const [label, expiryRounds] of [["1 window (spec)", 1], ["1 day", 96], ["1 week", 672], ["season", 2688]] as const) {
-  const s = simulate({ ...FIXED_RULES, expiryRounds }, seed);
-  sweep[label] = Object.fromEntries(
-    Object.values(s.players).map((p) => [p.id, `${p.farms.map((f) => `${f.template[0]}${f.tier}`).join(" ")} (spent ${p.stats.coinsSpent}, expired ${p.stats.coinsExpired.toFixed(0)})`]),
-  );
+  // Calibration gate (plan step 2). Exit non-zero if the shipping rules miss it.
+  const checks = calibrationGate(LOCKED_RULES, locked);
+  console.log("\n=== Calibration gate (LOCKED rules) ===");
+  for (const [name, ok, detail] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${name}  (${detail})`);
+  if (checks.some(([, ok]) => !ok)) process.exitCode = 1;
+
+  // Expiry sweep: how long must a coin live before the cost curve is reachable at all?
+  console.log("\n=== Expiry sweep (FIXED rules): tiers reached per archetype ===");
+  const sweep: Record<string, Record<string, string>> = {};
+  for (const [label, expiryRounds] of [["1 window (spec)", 1], ["1 day", 96], ["1 week", 672], ["season", 2688]] as const) {
+    const s = simulate({ ...FIXED_RULES, expiryRounds }, seed);
+    sweep[label] = Object.fromEntries(
+      Object.values(s.players).map((p) => [p.id, `${p.farms.map((f) => `${f.template[0]}${f.tier}`).join(" ")} (spent ${p.stats.coinsSpent}, expired ${p.stats.coinsExpired.toFixed(0)})`]),
+    );
+  }
+  console.table(sweep);
+
+  // Cost-curve check: what does the full tree cost, versus what a season can yield?
+  const r = LOCKED_RULES;
+  const wheatToT5 = r.upgrades.reduce((n, u) => n + u.cost, 0) + Object.values(r.equipment).reduce((n, e) => n + e.cost, 0);
+  const allTemplates = Object.values(r.templates).reduce((n, t) => n + t.cost, 0);
+  const seasonCalls = DAYS * r.dailyCallCap;
+  console.log(`\nCost curve: Wheat T1->T5 incl. equipment = ${wheatToT5} coins; all templates = ${allTemplates} coins.`);
+  console.log(`Season budget: ${seasonCalls} calls max; at 55% all-Up = ${Math.round(seasonCalls * 0.55)} coins; at 100% all-Up = ${seasonCalls} coins.`);
 }
-console.table(sweep);
-
-// Cost-curve check: what does the full tree cost, versus what a season can yield?
-const r = SPEC_RULES;
-const wheatToT5 = r.upgrades.reduce((n, u) => n + u.cost, 0) + Object.values(r.equipment).reduce((n, e) => n + e.cost, 0);
-const allTemplates = Object.values(r.templates).reduce((n, t) => n + t.cost, 0);
-const seasonCalls = DAYS * r.dailyCallCap;
-console.log(`\nCost curve: Wheat T1->T5 incl. equipment = ${wheatToT5} coins; all templates = ${allTemplates} coins.`);
-console.log(`Season budget: ${seasonCalls} calls max; at 55% all-Up = ${Math.round(seasonCalls * 0.55)} coins; at 100% all-Up = ${seasonCalls} coins.`);

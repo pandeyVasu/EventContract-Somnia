@@ -1,4 +1,4 @@
-import { dayOf, upgradeFrom, type Rules, type Resource } from "./rules.ts";
+import { dayOf, rewardUnits, upgradeFrom, type Rules, type Resource } from "./rules.ts";
 import { RuleViolation, type Event, type Farm, type GameState, type Player, type PlayerStats } from "./types.ts";
 
 // A pure reducer: (state, event) -> new state. Never mutates its input.
@@ -24,6 +24,7 @@ function newPlayer(id: string): Player {
     lots: [],
     calls: [],
     callsByDay: {},
+    timeBank: 0,
     prestige: 1,
     stats: emptyStats(),
   };
@@ -71,8 +72,8 @@ function spend(p: Player, kind: Resource, amount: number, windowId: number): voi
   if (kind === "coins") p.stats.coinsSpent += amount;
 }
 
-/** Push Time into the first running build; the remainder is lost (spec: "spent instantly or lost"). */
-function applyTime(p: Player, units: number): void {
+/** Push Time into the first running build. The remainder banks (rules.timeBanks) or is lost (spec). */
+function applyTime(rules: Rules, p: Player, units: number): void {
   let left = units;
   for (const f of p.farms) {
     if (left <= 0) break;
@@ -82,7 +83,8 @@ function applyTime(p: Player, units: number): void {
     p.stats.timeApplied += use;
     left -= use;
   }
-  p.stats.timeLost += left;
+  if (rules.timeBanks) p.timeBank += left;
+  else p.stats.timeLost += left;
 }
 
 function completeFinishedBuilds(p: Player): void {
@@ -163,7 +165,7 @@ export function reduce(rules: Rules, prev: GameState, ev: Event): GameState {
               p.lots.push({ kind, amount, earnedAtWindow: ev.settledAtWindow, expiresAfterWindow: expires });
             } else {
               p.stats.timeEarned += amount;
-              if (rules.timeAutoApplies) applyTime(p, amount);
+              if (rules.timeAutoApplies) applyTime(rules, p, amount);
               else p.lots.push({ kind, amount, earnedAtWindow: ev.settledAtWindow, expiresAfterWindow: expires });
             }
           };
@@ -171,12 +173,14 @@ export function reduce(rules: Rules, prev: GameState, ev: Event): GameState {
             p.stats.callsVoid++;
             award("coins", rules.voidReward);
             award("time", rules.voidReward);
+            if (rules.voidRefundsCall) {
+              // Refund the slot on the day the call was PLACED, not the settlement day.
+              const day = dayOf(rules, c.placedAtWindow);
+              p.callsByDay[day] = Math.max(0, (p.callsByDay[day] ?? 0) - 1);
+            }
           } else if (ev.result === c.direction) {
             p.stats.callsCorrect++;
-            const units = rules.riskScaledReward
-              ? rules.rewardPerCall * (1 - c.entryPrice)
-              : rules.rewardPerCall;
-            award(rules.resourceFor[c.direction], units);
+            award(rules.resourceFor[c.direction], rewardUnits(rules, c.entryPrice));
           } else {
             p.stats.callsWrong++;
           }
@@ -209,6 +213,14 @@ export function reduce(rules: Rules, prev: GameState, ev: Event): GameState {
       if (!up) throw new RuleViolation("NO_UPGRADE", `from tier ${f.tier}`);
       spend(p, "coins", up.cost, state.windowId);
       f.build = { targetTier: f.tier + 1, remainingWindows: up.windows, startedAtWindow: state.windowId };
+      if (rules.timeBanks && p.timeBank > 0) {
+        // Drain the bank into the new build, keep any remainder, finish now if fully covered.
+        const drain = Math.min(p.timeBank, f.build.remainingWindows);
+        f.build.remainingWindows -= drain;
+        p.timeBank -= drain;
+        p.stats.timeApplied += drain;
+      }
+      completeFinishedBuilds(p);
       return state;
     }
 

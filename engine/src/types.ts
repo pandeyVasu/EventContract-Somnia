@@ -52,6 +52,8 @@ export interface Player {
   lots: ResourceLot[];
   calls: Call[];
   callsByDay: Record<number, number>;
+  /** Time earned with no build to apply to (rules.timeBanks). Never expires; drains into the next START_UPGRADE. */
+  timeBank: number;
   prestige: number;
   stats: PlayerStats;
 }
@@ -70,6 +72,7 @@ export type Event =
       callId: string;
       marketId: string;
       asset: string;
+      /** Informational: the window the market belongs to. Cap and day logic use `state.windowId`. */
       windowId: number;
       direction: Direction;
       entryPrice: number;

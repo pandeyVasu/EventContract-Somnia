@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SPEC_RULES, FIXED_RULES, type Rules } from "../src/rules.ts";
+import { SPEC_RULES, FIXED_RULES, LOCKED_RULES, rewardUnits, type Rules } from "../src/rules.ts";
 import { initialState, reduce, available } from "../src/engine.ts";
 import { farmValue, leaderboard } from "../src/score.ts";
 import { RuleViolation, type Event, type GameState } from "../src/types.ts";
@@ -198,4 +198,126 @@ test("CONTRADICTION: under spec expiry, the cheapest upgrade (20 coins) is unrea
     peak = Math.max(peak, available(s.players[P]!, "coins", w));
   }
   assert.ok(peak < 20, `peak coins held = ${peak}`);
+});
+
+// ---------------------------------------------------------------------------
+// LOCKED_RULES — the rules the game ships with (plan step 2)
+// ---------------------------------------------------------------------------
+
+const L = LOCKED_RULES;
+const WHEAT = `${P}:wheat`;
+function upgrade(): Event { return { type: "START_UPGRADE", playerId: P, farmId: WHEAT }; }
+
+test("LOCKED reward: min(2, (1 - p) / 0.5) -> 0.5 pays 1, 0.2 pays 1.6, 0.9 pays 0.2, cap 2", () => {
+  assert.ok(Math.abs(rewardUnits(L, 0.5) - 1) < 1e-9);
+  assert.ok(Math.abs(rewardUnits(L, 0.2) - 1.6) < 1e-9);
+  assert.ok(Math.abs(rewardUnits(L, 0.9) - 0.2) < 1e-9);
+  assert.ok(Math.abs(rewardUnits(L, 0.01) - 1.98) < 1e-9, "cap of 2 is only reached at p -> 0");
+  assert.equal(rewardUnits({ ...L, riskBaselinePrice: 0.25 }, 0.1), 2, "cap binds");
+  const s = run(L, [join(), call("a", "m", "up", 0.2), settle("m", "up", 1)]);
+  assert.ok(Math.abs(s.players[P]!.stats.coinsEarned - 1.6) < 1e-9);
+});
+
+test("LOCKED: first build completes after one correct Up call at a 0.5 entry", () => {
+  let s = run(L, [join(), call("a", "m", "up", 0.5), settle("m", "up", 1)]);
+  s = reduce(L, s, upgrade());
+  assert.equal(s.players[P]!.farms[0]!.build?.remainingWindows, 1);
+  s = reduce(L, s, tick(2));
+  assert.equal(s.players[P]!.farms[0]!.tier, 2);
+});
+
+test("LOCKED Time bank: fills when no build is running, nothing is lost", () => {
+  const s = run(L, [join(), call("a", "m", "down", 0.5), settle("m", "down", 1)]);
+  const p = s.players[P]!;
+  assert.equal(p.timeBank, 1);
+  assert.equal(p.stats.timeLost, 0);
+  assert.equal(p.stats.timeApplied, 0);
+});
+
+test("LOCKED Time bank: running build is served first, remainder banks", () => {
+  let s = run(L, [join(), call("c", "m1", "up", 0.5), settle("m1", "up", 1)]);
+  s = reduce(L, s, upgrade());                       // T1->T2, 1 window remaining
+  s = reduce(L, s, call("d", "m2", "down", 0.2));    // 1.6 Time
+  s = reduce(L, s, settle("m2", "down", 1));
+  const p = s.players[P]!;
+  assert.equal(p.farms[0]!.tier, 2, "build finished by the applied Time");
+  assert.ok(Math.abs(p.timeBank - 0.6) < 1e-9, "excess banked");
+  assert.equal(p.stats.timeApplied, 1);
+});
+
+test("LOCKED Time bank: drains into the next START_UPGRADE, keeps the remainder, completes immediately", () => {
+  let s = run(L, [join()]);
+  for (const [i, dir] of (["up", "down", "down", "down"] as const).entries()) {
+    s = reduce(L, s, call(`c${i}`, `m${i}`, dir, 0.5));
+    s = reduce(L, s, settle(`m${i}`, dir, 1));
+  }
+  let p = s.players[P]!;
+  assert.equal(p.timeBank, 3);
+  s = reduce(L, s, upgrade());                        // costs 1 coin, 1 window; bank covers it
+  p = s.players[P]!;
+  assert.equal(p.farms[0]!.tier, 2, "completed without a tick");
+  assert.equal(p.farms[0]!.build, null);
+  assert.equal(p.timeBank, 2, "remainder kept");
+  assert.equal(p.stats.timeApplied, 1);
+});
+
+test("LOCKED Time bank never expires", () => {
+  let s = run(L, [join(), call("a", "m", "down", 0.5), settle("m", "down", 1)]);
+  s = reduce(L, s, tick(1 + L.expiryRounds * 10));
+  assert.equal(s.players[P]!.timeBank, 1);
+});
+
+test("LOCKED void: no reward, daily slot refunded on the day the call was placed (cross-midnight)", () => {
+  let s = run(L, [join(), tick(95)]);                 // last window of day 0
+  s = reduce(L, s, call("a", "m", "up", 0.5, 95));
+  s = reduce(L, s, call("b", "n", "up", 0.5, 95));
+  s = reduce(L, s, tick(97));                          // day 1
+  s = reduce(L, s, call("c", "o", "up", 0.5, 97));
+  assert.equal(s.players[P]!.callsByDay[0], 2);
+  assert.equal(s.players[P]!.callsByDay[1], 1);
+  s = reduce(L, s, settle("m", "void", 97));
+  const p = s.players[P]!;
+  assert.equal(p.callsByDay[0], 1, "day 0 decremented");
+  assert.equal(p.callsByDay[1], 1, "day 1 untouched");
+  assert.equal(p.stats.callsVoid, 1);
+  assert.equal(p.stats.coinsEarned, 0);
+  assert.equal(p.stats.timeEarned, 0);
+  assert.equal(p.timeBank, 0);
+});
+
+test("LOCKED void refund floors at zero", () => {
+  let s = run(L, [join(), call("a", "m", "up", 0.5)]);
+  s.players[P]!.callsByDay[0] = 0;                     // simulate a corrupt/replayed count
+  s = reduce(L, s, settle("m", "void", 1));
+  assert.equal(s.players[P]!.callsByDay[0], 0);
+});
+
+test("LOCKED: BTC Up + ETH Down in the same window is accepted; Up + Down on one market is not", () => {
+  let s = run(L, [join()]);
+  s = reduce(L, s, { type: "CALL_PLACED", playerId: P, callId: "a", marketId: "BTC-7", asset: "BTC", windowId: 7, direction: "up", entryPrice: 0.5 });
+  assert.doesNotThrow(() =>
+    reduce(L, s, { type: "CALL_PLACED", playerId: P, callId: "b", marketId: "ETH-7", asset: "ETH", windowId: 7, direction: "down", entryPrice: 0.5 }));
+  expectViolation("HEDGE", () =>
+    reduce(L, s, { type: "CALL_PLACED", playerId: P, callId: "c", marketId: "BTC-7", asset: "BTC", windowId: 7, direction: "down", entryPrice: 0.5 }));
+});
+
+test("LOCKED: entry price is never gated", () => {
+  const s = run(L, [join()]);
+  assert.doesNotThrow(() => reduce(L, s, call("a", "m", "up", 0.99)));
+});
+
+test("LOCKED: CALL_PLACED.windowId is informational; cap and day use state.windowId", () => {
+  let s = run(L, [join(), tick(96)]);                  // day 1
+  s = reduce(L, s, call("a", "m", "up", 0.5, 0));      // claims window 0 (day 0)
+  assert.equal(s.players[P]!.callsByDay[1], 1);
+  assert.equal(s.players[P]!.callsByDay[0], undefined);
+});
+
+test("LOCKED cost tables: Wheat T1->T5 with equipment = 36 coins, T4 path = 16", () => {
+  const ups = L.upgrades.reduce((n, u) => n + u.cost, 0);
+  const eq = Object.values(L.equipment).reduce((n, e) => n + e.cost, 0);
+  assert.equal(ups + eq, 36);
+  const t4 = L.upgrades.filter((u) => u.from <= 3).reduce((n, u) => n + u.cost, 0)
+    + L.equipment.irrigation.cost + L.equipment.harvester.cost;
+  assert.equal(t4, 16);
 });
