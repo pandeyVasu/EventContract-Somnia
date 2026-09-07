@@ -2,7 +2,7 @@
 
 import { Chunky, Note, Panel, Pill, AssetBadge, cx } from "../kit.tsx";
 import { ClockIcon, CoinIcon, DownIcon, UpIcon } from "../icons.tsx";
-import { formatCountdown } from "../../game/view.ts";
+import { formatWait } from "../../game/view.ts";
 import type { AssetOption, CallView, GameView } from "../../game/view.ts";
 import { useGame } from "../../game/useGame.tsx";
 import type { Direction } from "../../chain/types.ts";
@@ -83,7 +83,9 @@ function PendingChip({ call }: { call: CallView }) {
         {call.direction === "up" ? <UpIcon size={15} /> : <DownIcon size={15} />}
         {call.direction === "up" ? "Up" : "Down"}
       </span>
-      <span className="text-sm font-bold text-muted">waiting to settle</span>
+      <span className="text-sm font-bold text-muted">
+        {call.settlesInSeconds === null ? "settling now" : `settles in ${formatWait(call.settlesInSeconds)}`}
+      </span>
     </Pill>
   );
 }
@@ -108,11 +110,17 @@ export function CallScreen() {
         <h1 className="on-world m-0 text-center font-display text-[clamp(28px,3vw,40px)] font-semibold tracking-tight">
           Which way this round?
         </h1>
-        <Pill className="h-10">
-          <span className="text-muted"><ClockIcon size={18} /></span>
-          <span className="font-bold text-muted">Round closes in</span>
-          <span className="tnum">{formatCountdown(view.secondsLeftInWindow)}</span>
-        </Pill>
+        {view.roundSettlesInSeconds !== null ? (
+          <Pill className="h-10">
+            <span className="text-muted"><ClockIcon size={18} /></span>
+            <span className="font-bold text-muted">This round settles in</span>
+            <span className="tnum">{formatWait(view.roundSettlesInSeconds)}</span>
+          </Pill>
+        ) : (
+          <Pill className="h-10">
+            <span className="font-bold text-muted">No round open right now</span>
+          </Pill>
+        )}
       </div>
 
       <div className="absolute inset-x-0 top-[250px] z-10 flex justify-center gap-[clamp(24px,8vw,140px)] px-8">

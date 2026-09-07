@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { LOCKED_RULES, initialState, reduce, type Event, type GameState } from "farm-engine";
 import { currentWindowId } from "../src/chain/clock.ts";
 import { openMarketIds, redeemablePairs, settlementEvents, tickEvent } from "../src/game/loop.ts";
-import { buildView, formatCountdown, formatWindows } from "../src/game/view.ts";
+import { buildView, formatCountdown, formatWait, formatWindows } from "../src/game/view.ts";
 import type { LiveWindow, Settlement } from "../src/chain/types.ts";
 
 const R = LOCKED_RULES;
@@ -12,8 +12,18 @@ const ME = "0xabc";
 const BTC_MARKET = "0xbtc" as `0x${string}`;
 const ETH_MARKET = "0xeth" as `0x${string}`;
 
-function windowAt(asset: string, marketId: `0x${string}`): LiveWindow {
-  return { marketId, pool: "0xpool" as `0x${string}`, asset, intervalSec: 3600, expiry: 0, secondsLeft: 3600 };
+const NOW = Date.UTC(2026, 8, 7, 12, 0, 0);
+const NOW_SECONDS = Math.floor(NOW / 1000);
+
+function windowAt(asset: string, marketId: `0x${string}`, secondsAway = 3600): LiveWindow {
+  return {
+    marketId,
+    pool: "0xpool" as `0x${string}`,
+    asset,
+    intervalSec: 14400,
+    expiry: NOW_SECONDS + secondsAway,
+    secondsLeft: secondsAway,
+  };
 }
 
 /** Build a state by feeding real events through the real reducer. */
@@ -30,7 +40,7 @@ function placed(marketId: `0x${string}`, asset: string, direction: "up" | "down"
 }
 
 function view(state: GameState, windows: LiveWindow[] = []) {
-  return buildView({ rules: R, state, playerId: ME, address: ME, windows, now: Date.UTC(2026, 8, 7, 12, 0, 0) });
+  return buildView({ rules: R, state, playerId: ME, address: ME, windows, now: NOW });
 }
 
 // --- loop: the three things that happen without the player ------------------
@@ -290,4 +300,42 @@ test("a player with no save yet still gets a view the screens can render", () =>
   assert.equal(v.connected, false);
   assert.equal(v.farms.length, 0);
   assert.equal(v.callsLeftToday, R.dailyCallCap);
+});
+
+// --- the clock the player waits on is the market's, not the game's -----------
+
+test("a wait is spoken in whole minutes and hours, because a round can be hours", () => {
+  assert.equal(formatWait(30), "under a minute");
+  assert.equal(formatWait(56 * 60), "56 min");
+  assert.equal(formatWait(4 * 3600), "4h");
+  assert.equal(formatWait(4 * 3600 + 12 * 60), "4h 12m");
+  assert.equal(formatWait(null), "settling now");
+});
+
+test("the countdown reports when the round settles, not when the game window rolls", () => {
+  const v = view(stateWith([]), [windowAt("BTC", BTC_MARKET, 3360), windowAt("ETH", ETH_MARKET, 7200)]);
+  // The game window is 15 minutes; the soonest round is 56. The screen shows 56.
+  assert.equal(v.roundSettlesInSeconds, 3360);
+  assert.ok(v.secondsLeftInWindow <= 900);
+});
+
+test("with no round open there is no countdown to show", () => {
+  assert.equal(view(stateWith([])).roundSettlesInSeconds, null);
+});
+
+test("an asset already called says how long until it opens again", () => {
+  const s = stateWith([placed(BTC_MARKET, "BTC", "up")]);
+  const btc = view(s, [windowAt("BTC", BTC_MARKET, 3360)]).assets.find((a) => a.asset === "BTC")!;
+  assert.match((btc.state as { reason: string }).reason, /opens again when this one settles, in 56 min/);
+});
+
+test("an open call carries the real time until it settles", () => {
+  const s = stateWith([placed(BTC_MARKET, "BTC", "up")]);
+  const call = view(s, [windowAt("BTC", BTC_MARKET, 3360)]).openCalls[0]!;
+  assert.equal(call.settlesInSeconds, 3360);
+});
+
+test("a call whose round has left the live list is settling now, not stuck", () => {
+  const s = stateWith([placed(BTC_MARKET, "BTC", "up")]);
+  assert.equal(view(s, []).openCalls[0]!.settlesInSeconds, null);
 });

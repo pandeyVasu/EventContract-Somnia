@@ -23,6 +23,8 @@ export interface AssetOption {
   state: AssetState;
   /** The direction already called on this round's market, if any. */
   calledDirection: Direction | null;
+  /** Seconds until this asset's round settles, or null when nothing is open. */
+  settlesInSeconds: number | null;
 }
 
 export interface EquipmentOption {
@@ -80,6 +82,11 @@ export interface CallView {
   placedAtWindow: number;
   /** The placing transaction. Also the call id. */
   txHash: string;
+  /**
+   * Seconds until this call settles, or null once its round has left the live
+   * list, which means it is settling now.
+   */
+  settlesInSeconds: number | null;
 }
 
 export interface GameView {
@@ -90,6 +97,8 @@ export interface GameView {
   callsLeftToday: number;
   dailyCallCap: number;
   secondsLeftInWindow: number;
+  /** Seconds until the soonest open round settles. This is the countdown to show. */
+  roundSettlesInSeconds: number | null;
   windowId: number;
   coinsExpiringSoon: number;
   assets: AssetOption[];
@@ -123,7 +132,22 @@ export function formatWindows(windows: number): string {
   return `${m}m`;
 }
 
-/** "08:42". Used for the round countdown and settle-in times. */
+/**
+ * "56 min", "4h 12m", "under a minute". Used for anything the player is waiting
+ * on, which on testnet can be hours: the round length comes from the market, not
+ * from the game.
+ */
+export function formatWait(seconds: number | null): string {
+  if (seconds === null) return "settling now";
+  if (seconds <= 60) return "under a minute";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** "08:42". Kept for anything genuinely short. */
 export function formatCountdown(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   const mm = Math.floor(s / 60);
@@ -131,7 +155,7 @@ export function formatCountdown(seconds: number): string {
   return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
-function callView(rules: Rules, c: Call): CallView {
+function callView(rules: Rules, c: Call, settlesInSeconds: number | null): CallView {
   const outcome: CallView["outcome"] =
     c.result === null ? "open" : c.result === "void" ? "void" : c.result === c.direction ? "right" : "missed";
   let reward: CallView["reward"] = null;
@@ -150,6 +174,7 @@ function callView(rules: Rules, c: Call): CallView {
     reward,
     placedAtWindow: c.placedAtWindow,
     txHash: c.id,
+    settlesInSeconds,
   };
 }
 
@@ -220,6 +245,7 @@ function assetOptions(
   p: Player,
   windows: LiveWindow[],
   callsLeft: number,
+  now: number,
 ): AssetOption[] {
   const known = ["BTC", "ETH"];
   const assets = [...new Set([...known, ...windows.map((w) => w.asset)])];
@@ -230,18 +256,22 @@ function assetOptions(
       ? p.calls.find((c) => c.marketId === window.marketId && c.result === null) ?? null
       : null;
 
+    const settlesInSeconds = window ? Math.max(0, window.expiry - Math.floor(now / 1000)) : null;
+
     let state: AssetState;
     if (!window) state = { kind: "closed", reason: `Nothing open for ${assetLabel(asset)} right now.` };
     else if (openCall) {
+      // The wait is the market's, not the game's. Saying "when the round closes"
+      // read as the 15-minute countdown and was wrong by hours.
       state = {
         kind: "closed",
-        reason: `You already called ${assetLabel(asset)} this round. It opens again when the round closes.`,
+        reason: `You already called ${assetLabel(asset)} this round. It opens again when this one settles, in ${formatWait(settlesInSeconds)}.`,
       };
     } else if (callsLeft <= 0) {
       state = { kind: "closed", reason: "No calls left today. They come back at midnight." };
     } else state = { kind: "open" };
 
-    return { asset, label: assetLabel(asset), state, calledDirection: openCall?.direction ?? null };
+    return { asset, label: assetLabel(asset), state, calledDirection: openCall?.direction ?? null, settlesInSeconds };
   });
 }
 
@@ -267,6 +297,7 @@ export function buildView({ rules, state, playerId, address, windows, now }: Vie
       callsLeftToday: rules.dailyCallCap,
       dailyCallCap: rules.dailyCallCap,
       secondsLeftInWindow: secondsLeftInWindow(now),
+      roundSettlesInSeconds: null,
       windowId,
       coinsExpiringSoon: 0,
       assets: [],
@@ -286,7 +317,14 @@ export function buildView({ rules, state, playerId, address, windows, now }: Vie
     .filter((l) => l.kind === "coins" && l.expiresAfterWindow >= windowId && l.expiresAfterWindow - windowId <= expiryWarningWindows(rules))
     .reduce((n, l) => n + l.amount, 0);
 
-  const calls = p.calls.map((c) => callView(rules, c));
+  // A call settles when its market expires. Once that market drops off the live
+  // list there is nothing left to count, which is itself the answer: any moment.
+  const nowSeconds = Math.floor(now / 1000);
+  const expiryOf = (marketId: string): number | null => {
+    const w = windows.find((x) => x.marketId === marketId);
+    return w ? Math.max(0, w.expiry - nowSeconds) : null;
+  };
+  const calls = p.calls.map((c) => callView(rules, c, c.result === null ? expiryOf(c.marketId) : null));
   const farmValue = p.farms.reduce((n, f) => n + f.tier * rules.templates[f.template].multiplier * p.prestige, 0);
 
   return {
@@ -297,9 +335,12 @@ export function buildView({ rules, state, playerId, address, windows, now }: Vie
     callsLeftToday,
     dailyCallCap: rules.dailyCallCap,
     secondsLeftInWindow: secondsLeftInWindow(now),
+    roundSettlesInSeconds: windows.length
+      ? Math.min(...windows.map((w) => Math.max(0, w.expiry - nowSeconds)))
+      : null,
     windowId,
     coinsExpiringSoon,
-    assets: assetOptions(p, windows, callsLeftToday),
+    assets: assetOptions(p, windows, callsLeftToday, now),
     openCalls: calls.filter((c) => c.outcome === "open").reverse(),
     finishedCalls: calls.filter((c) => c.outcome !== "open").reverse(),
     farms: p.farms.map((f) => farmView(rules, p, f, coins)),
