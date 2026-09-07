@@ -94,24 +94,29 @@ test("the countdown reports time left in the game window, not the market", () =>
 
 // --- discovery ---------------------------------------------------------------
 
-test("discovery keeps reference markets only and confirms status on chain", async () => {
+test("discovery takes both direction shapes and confirms status on chain", async () => {
   const now = 1_700_000_000_000;
   const nowSec = now / 1000;
   const { ex } = fakeExchange({
     liveMarkets: [
       { marketId: "0xa", poolAddress: POOL, asset: "BTC", mode: "reference", intervalSec: 3600, expiry: nowSec + 3600 },
       { marketId: "0xb", poolAddress: POOL, asset: "ETH", mode: "reference", intervalSec: 900, expiry: nowSec + 800 },
-      { marketId: "0xc", poolAddress: POOL, asset: "BTC", mode: "fixed", intervalSec: 60, expiry: nowSec + 3600 },
+      { marketId: "0xc", poolAddress: POOL, asset: "BTC", mode: "fixed", intervalSec: 60, expiry: nowSec + 50 },
       { marketId: "0xd", poolAddress: POOL, asset: "ETH", mode: "reference", intervalSec: 3600, expiry: nowSec + 60 },
+      { marketId: "0xe", poolAddress: POOL, asset: "BTC", mode: "swaps", intervalSec: 60, expiry: nowSec + 3600 },
     ],
   });
   const windows = await listLiveWindows(ex.client, now);
   const ids = windows.map((w) => w.marketId);
-  assert.ok(ids.includes("0xa" as `0x${string}`), "an hourly reference market is offered");
-  assert.ok(ids.includes("0xb" as `0x${string}`), "a 15-minute reference market would be preferred if one existed");
-  assert.ok(!ids.includes("0xc" as `0x${string}`), "fixed mode is a strike bet, not a direction call");
-  assert.ok(!ids.includes("0xd" as `0x${string}`), "under five minutes left, it locks before an order lands");
-  assert.equal(windows[0]!.marketId, "0xb", "shortest window first");
+  assert.ok(ids.includes("0xa" as `0x${string}`), "an hourly round is offered");
+  assert.ok(ids.includes("0xb" as `0x${string}`), "a quarter-hour round is offered");
+  assert.ok(
+    ids.includes("0xc" as `0x${string}`),
+    "a one-minute round is a direction call too: its strike is the price at the open",
+  );
+  assert.ok(!ids.includes("0xd" as `0x${string}`), "too close to its lock for an order to land");
+  assert.ok(!ids.includes("0xe" as `0x${string}`), "a shape we have not verified is left alone");
+  assert.equal(windows[0]!.marketId, "0xc", "shortest round first, so the game feels immediate");
 });
 
 test("discovery drops a market the chain does not report as Trading", async () => {

@@ -6,8 +6,24 @@
 
 import type { ChainClient, LiveWindow } from "./types.ts";
 
-/** Up/Down markets are reference mode. Fixed mode is a strike bet, a different game. */
-const REFERENCE = "reference";
+/**
+ * The two shapes a round can take here, and why both carry an Up/Down call.
+ *
+ * A `reference` round asks whether the price at expiry beat the price when the
+ * round opened. That is a direction call by construction.
+ *
+ * A `fixed` round asks whether the price at expiry is at or above a strike. That
+ * is only the same question if the strike is the price at the open, so this was
+ * checked against the venue rather than assumed: across consecutive one-minute
+ * ETH rounds the strike moved every single time and tracked the market
+ * (2488.00, 2488.38, 2489.95, 2490.62, ...), and each round's trading start
+ * equals its own open. The strike is spot at the open, so "at or above the
+ * strike" is "went up", with a dead heat counting as up.
+ *
+ * The short rounds this game most wants are listed in fixed mode, so refusing
+ * them would have cost the fastest loop for a distinction that does not exist.
+ */
+const DIRECTION_MODES = new Set(["reference", "fixed"]);
 
 /**
  * How much of a round must be left for an order to still land.
@@ -38,7 +54,7 @@ export async function listLiveWindows(
   const live = await client.listLiveBinaryMarkets({ limit: 100 });
 
   const candidates = live
-    .filter((m) => m.mode === REFERENCE)
+    .filter((m) => DIRECTION_MODES.has(String(m.mode)))
     .map((m) => ({
       marketId: String(m.marketId) as `0x${string}`,
       pool: (m.pool ?? m.poolAddress) as `0x${string}`,
