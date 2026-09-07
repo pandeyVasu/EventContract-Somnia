@@ -9,8 +9,20 @@ import type { ChainClient, LiveWindow } from "./types.ts";
 /** Up/Down markets are reference mode. Fixed mode is a strike bet, a different game. */
 const REFERENCE = "reference";
 
-/** A market this close to expiry locks before an order can land. */
-export const MIN_SECONDS_LEFT = 300;
+/**
+ * How much of a round must be left for an order to still land.
+ *
+ * A flat five minutes was sized for hour-long rounds and quietly excluded every
+ * short one: a five-minute round never has more than five minutes left, so it
+ * could never be offered, and a fifteen-minute round was only usable for its
+ * first ten. Those are precisely the rounds that make the game feel immediate.
+ *
+ * So the guard scales with the round instead: a sixth of it, never under twenty
+ * seconds, and never over the five minutes that long rounds are known to need.
+ */
+export function minSecondsLeft(intervalSec: number): number {
+  return Math.min(300, Math.max(20, Math.floor(intervalSec / 6)));
+}
 
 /**
  * Every tradeable Up/Down market right now, shortest window first.
@@ -35,7 +47,7 @@ export async function listLiveWindows(
       expiry: Number(m.expiry),
       secondsLeft: Number(m.expiry) - nowSeconds,
     }))
-    .filter((m) => m.secondsLeft > MIN_SECONDS_LEFT);
+    .filter((m) => m.secondsLeft > minSecondsLeft(m.intervalSec));
 
   const confirmed: LiveWindow[] = [];
   for (const m of candidates) {

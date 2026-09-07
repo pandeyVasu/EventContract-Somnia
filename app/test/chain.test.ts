@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { LOCKED_RULES, dayOf } from "farm-engine";
 import { GAME_WINDOW_SECONDS, currentWindowId, secondsLeftInWindow, windowIdAt } from "../src/chain/clock.ts";
-import { MIN_SECONDS_LEFT, listLiveWindows, pickWindow, tradeableAssets } from "../src/chain/windows.ts";
+import { listLiveWindows, minSecondsLeft, pickWindow, tradeableAssets } from "../src/chain/windows.ts";
 import { ONE_COLLATERAL, entryPriceFrom, outcomeIdxFor, placeCall, sideFor } from "../src/chain/place.ts";
 import { pollSettlements, readSettlement } from "../src/chain/settle.ts";
 import { redeemCall } from "../src/chain/redeem.ts";
@@ -128,7 +128,41 @@ test("picking a window is by asset, and says nothing rather than guessing", () =
   assert.equal(pickWindow(windows, "BTC")?.marketId, MARKET);
   assert.equal(pickWindow(windows, "ETH"), null);
   assert.deepEqual(tradeableAssets(windows), ["BTC"]);
-  assert.equal(MIN_SECONDS_LEFT, 300);
+});
+
+test("the lock guard scales with the round, so a short round is still callable", () => {
+  // A flat five minutes excluded every round shorter than five minutes and made
+  // a quarter-hour round callable for only two thirds of its life.
+  assert.equal(minSecondsLeft(300), 50);
+  assert.equal(minSecondsLeft(900), 150);
+  assert.equal(minSecondsLeft(3600), 300);
+  assert.equal(minSecondsLeft(14400), 300);
+  // Never so small that an order cannot land.
+  assert.equal(minSecondsLeft(60), 20);
+});
+
+test("a five-minute round is offered, where the old flat guard hid it", async () => {
+  const now = 1_700_000_000_000;
+  const nowSeconds = now / 1000;
+  const { ex } = fakeExchange({
+    liveMarkets: [
+      { marketId: "0xshort", poolAddress: POOL, asset: "BTC", mode: "reference", intervalSec: 300, expiry: nowSeconds + 240 },
+    ],
+  });
+  const live = await listLiveWindows(ex.client, now);
+  assert.equal(live.length, 1);
+  assert.equal(live[0]!.intervalSec, 300);
+});
+
+test("a round about to lock is still skipped, whatever its length", async () => {
+  const now = 1_700_000_000_000;
+  const nowSeconds = now / 1000;
+  const { ex } = fakeExchange({
+    liveMarkets: [
+      { marketId: "0xclosing", poolAddress: POOL, asset: "BTC", mode: "reference", intervalSec: 300, expiry: nowSeconds + 30 },
+    ],
+  });
+  assert.deepEqual(await listLiveWindows(ex.client, now), []);
 });
 
 // --- placement ---------------------------------------------------------------
