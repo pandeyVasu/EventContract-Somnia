@@ -4,14 +4,14 @@
 // happens here, once, from the rules. Components render this and call actions.
 
 import {
-  available, dayOf, tierCap, upgradeFrom,
+  available, dayOf, rewardUnits, tierCap, upgradeFrom,
   type Call, type EquipmentId, type GameState, type Player, type Rules,
 } from "farm-engine";
-import { GAME_WINDOW_SECONDS, WINDOWS_PER_DAY, dayOfWindow, secondsLeftInWindow } from "../chain/clock.ts";
+import { GAME_WINDOW_SECONDS, secondsLeftInWindow } from "../chain/clock.ts";
 import type { Direction, LiveWindow } from "../chain/types.ts";
 
-/** Coins inside this many windows of expiry get a gentle warning. One day. */
-const EXPIRY_WARNING_WINDOWS = WINDOWS_PER_DAY;
+/** Coins within a day of expiry get a gentle warning. A day's length is a rule. */
+const expiryWarningWindows = (rules: Rules): number => rules.windowsPerDay;
 
 export type AssetState =
   | { kind: "open" }
@@ -136,12 +136,9 @@ function callView(rules: Rules, c: Call): CallView {
     c.result === null ? "open" : c.result === "void" ? "void" : c.result === c.direction ? "right" : "missed";
   let reward: CallView["reward"] = null;
   if (outcome === "right") {
-    const kind = rules.resourceFor[c.direction];
-    // Reward is per correct call and scaled by how contrarian the call was.
-    const units = rules.riskScaledReward
-      ? rules.rewardPerCall * Math.min(rules.maxRewardMultiplier, (1 - c.entryPrice) / rules.riskBaselinePrice)
-      : rules.rewardPerCall;
-    reward = { kind, amount: units };
+    // The formula lives in the engine. Never a second copy: a change there has to
+    // reach the receipt the player reads.
+    reward = { kind: rules.resourceFor[c.direction], amount: rewardUnits(rules, c.entryPrice) };
   }
   return {
     id: c.id,
@@ -286,7 +283,7 @@ export function buildView({ rules, state, playerId, address, windows, now }: Vie
   const callsLeftToday = Math.max(0, rules.dailyCallCap - used);
 
   const coinsExpiringSoon = p.lots
-    .filter((l) => l.kind === "coins" && l.expiresAfterWindow >= windowId && l.expiresAfterWindow - windowId <= EXPIRY_WARNING_WINDOWS)
+    .filter((l) => l.kind === "coins" && l.expiresAfterWindow >= windowId && l.expiresAfterWindow - windowId <= expiryWarningWindows(rules))
     .reduce((n, l) => n + l.amount, 0);
 
   const calls = p.calls.map((c) => callView(rules, c));
@@ -310,5 +307,3 @@ export function buildView({ rules, state, playerId, address, windows, now }: Vie
     hitRate: { right: p.stats.callsCorrect, decided: p.stats.callsCorrect + p.stats.callsWrong },
   };
 }
-
-export { dayOfWindow };

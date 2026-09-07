@@ -146,6 +146,7 @@ function CallRow({ call }: { call: CallView }) {
         target="_blank"
         rel="noreferrer"
         title="See this call on the explorer"
+        aria-label={`See the settled ${call.label} call on the explorer`}
         className="flex h-[26px] w-[26px] items-center justify-center rounded-md border-2 border-line text-faint hover:text-muted"
       >
         <ExternalIcon size={12} />

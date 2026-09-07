@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { GAME_WINDOW_SECONDS, currentWindowId, dayOfWindow, secondsLeftInWindow, windowIdAt } from "../src/chain/clock.ts";
+import { LOCKED_RULES, dayOf } from "farm-engine";
+import { GAME_WINDOW_SECONDS, currentWindowId, secondsLeftInWindow, windowIdAt } from "../src/chain/clock.ts";
 import { MIN_SECONDS_LEFT, listLiveWindows, pickWindow, tradeableAssets } from "../src/chain/windows.ts";
 import { ONE_COLLATERAL, entryPriceFrom, outcomeIdxFor, placeCall, sideFor } from "../src/chain/place.ts";
 import { pollSettlements, readSettlement } from "../src/chain/settle.ts";
@@ -81,8 +82,9 @@ test("a game window is 15 minutes and a day holds 96 of them", () => {
   assert.equal(windowIdAt(0), 0);
   assert.equal(windowIdAt(899), 0);
   assert.equal(windowIdAt(900), 1);
-  assert.equal(dayOfWindow(95), 0);
-  assert.equal(dayOfWindow(96), 1);
+  // A window's day is the engine's arithmetic, not the adapter's.
+  assert.equal(dayOf(LOCKED_RULES, 95), 0);
+  assert.equal(dayOf(LOCKED_RULES, 96), 1);
 });
 
 test("the countdown reports time left in the game window, not the market", () => {

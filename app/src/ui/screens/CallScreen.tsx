@@ -8,13 +8,13 @@ import { useGame } from "../../game/useGame.tsx";
 import type { Direction } from "../../chain/types.ts";
 
 function DirectionButton({
-  direction, disabled, busy, onClick,
-}: { direction: Direction; disabled: boolean; busy: boolean; onClick(): void }) {
+  direction, reason, busy, onClick,
+}: { direction: Direction; reason: string | null; busy: boolean; onClick(): void }) {
   const up = direction === "up";
   return (
     <Chunky
       variant={up ? "up" : "down"}
-      reason={disabled ? "" : null}
+      reason={reason}
       busy={busy}
       onClick={onClick}
       className="flex h-24 flex-col items-center justify-center gap-1.5 px-0 shadow-[0_5px_0_#6f5334]"
@@ -59,7 +59,7 @@ function AssetSign({ option, hint }: { option: AssetOption; hint: string }) {
             <DirectionButton
               key={d}
               direction={d}
-              disabled={closed}
+              reason={closed ? (option.state as { reason: string }).reason : null}
               busy={pending === `call:${option.asset}:${d}`}
               onClick={() => void actions.placeCall(option.asset, d)}
             />

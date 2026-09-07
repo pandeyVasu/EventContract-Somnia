@@ -88,6 +88,7 @@ export function SettlementOverlay({ call, onDismiss }: Props) {
             href={txLink(call.txHash)}
             target="_blank"
             rel="noreferrer"
+            title="See this call on the explorer"
             onClick={(e) => e.stopPropagation()}
             className="flex items-center gap-1.5 text-[13px] font-extrabold text-faint hover:text-muted"
           >

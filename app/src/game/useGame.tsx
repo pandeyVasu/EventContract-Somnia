@@ -75,21 +75,27 @@ export function GameProvider({ children }: { children: ReactNode }) {
   // The exchange holds a websocket, so it is built once per wallet and closed
   // when the wallet goes away. Leaving it open is what kept every spike script
   // alive after its work was done.
+  const walletAddress = walletClient?.account?.address ?? null;
+
+  // Keyed on the ADDRESS, not the wallet client object. wagmi hands back a fresh
+  // object for the same account across re-renders, and keying on that closed a
+  // live websocket and opened another every time.
   const exchange = useMemo<Exchange | null>(() => {
     if (!walletClient?.account?.address) return null;
     try {
       return getExchange(walletClient as unknown as { account?: { address?: string } });
     } catch (e) {
       console.warn("[farm] could not reach the exchange:", e);
+      setMessage("Could not reach the network. Reload the page and connect again.");
       return null;
     }
-  }, [walletClient]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletAddress]);
 
   useEffect(() => {
-    const owner = walletClient?.account?.address;
-    if (!owner) return;
-    return () => releaseExchange(owner);
-  }, [walletClient]);
+    if (!walletAddress) return;
+    return () => releaseExchange(walletAddress);
+  }, [walletAddress]);
 
   // --- the clock -----------------------------------------------------------
   useEffect(() => {
@@ -109,12 +115,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
       return;
     }
     let alive = true;
+    let misses = 0;
     const refresh = async () => {
       try {
         const live = await listLiveWindows(exchange.client);
-        if (alive) setWindows(live);
+        if (!alive) return;
+        misses = 0;
+        setWindows(live);
       } catch (e) {
         console.warn("[farm] could not read open rounds:", e);
+        // One failure is a hiccup. Three in a row is the player staring at an
+        // empty screen with no idea the app, not the market, is the problem.
+        if (alive && ++misses === 3) setMessage("Cannot reach the network right now. Rounds will come back on their own.");
       }
     };
     void refresh();
@@ -130,15 +142,33 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!exchange || !store) return;
     let alive = true;
+    let settleMisses = 0;
+    let inFlight = false;
 
     const check = async () => {
+      // A slow poll must not overlap the next one. The engine ignores a repeated
+      // settlement, but a duplicate would still show the overlay twice.
+      if (inFlight) return;
       const open = openMarketIds(store.getState(), playerId);
       if (!open.length) return;
+      inFlight = true;
+      try {
+        await runCheck(open);
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const runCheck = async (open: `0x${string}`[]) => {
       let settled: Settlement[] = [];
       try {
         settled = await pollSettlements(exchange.client, open);
+        settleMisses = 0;
       } catch (e) {
         console.warn("[farm] could not check finished rounds:", e);
+        if (alive && ++settleMisses === 3) {
+          setMessage("Cannot check your open calls right now. They are safe on chain and will settle.");
+        }
         return;
       }
       if (!alive || !settled.length) return;
@@ -186,16 +216,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const connectWallet = useCallback(async () => {
+    const connector = connectors[0];
+    if (!connector) throw new Error("no wallet connector");
+    if (!isConnected) await connectAsync({ connector });
+    // The wallet may already be on Shannon, or may refuse to move; the banner covers both.
+    await switchChainAsync({ chainId: CHAIN.id }).catch(() => {});
+  }, [connectors, isConnected, connectAsync, switchChainAsync]);
+
   const actions = useMemo<GameActions>(() => ({
     async connect() {
-      await run("connect", async () => {
-        const connector = connectors[0];
-        if (!connector) throw new Error("no wallet connector");
-        if (!isConnected) await connectAsync({ connector });
-        await switchChainAsync({ chainId: CHAIN.id }).catch(() => {
-          // The wallet may already be here, or may refuse; the banner covers it.
-        });
-      }, "Could not reach your wallet. Is it unlocked?");
+      await run("connect", connectWallet, "Could not reach your wallet. Is it unlocked?");
     },
 
     disconnect() {
@@ -204,9 +235,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     async getTestFunds() {
       await run("faucet", async () => {
-        if (!exchange?.trader.faucet) throw new Error("no faucet on this trader");
+        // The button is offered before anyone is connected, which is the whole
+        // point of it: a judge lands here with an empty wallet. Connect first.
+        if (!exchange) {
+          await connectWallet();
+          setMessage("Wallet connected. Press it once more to claim your test funds.");
+          return;
+        }
+        if (!exchange.trader.faucet) throw new Error("no faucet on this trader");
         await exchange.trader.faucet({});
-        setMessage("Test funds are on the way. Give it a moment.");
+        setMessage("Test funds are on the way. Give it a moment, then make a call.");
       }, "The faucet did not answer. Try again in a moment.");
     },
 
@@ -249,7 +287,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (violation) setMessage("You cannot buy that yet.");
       }, "Could not buy that.");
     },
-  }), [run, connectors, connectAsync, isConnected, switchChainAsync, disconnect, exchange, store, windows, playerId]);
+  }), [run, connectWallet, disconnect, exchange, store, windows, playerId]);
 
   // --- what the screens see ------------------------------------------------
   const view = useMemo(

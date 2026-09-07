@@ -33,20 +33,24 @@ const VARIANTS: Record<Variant, string> = {
 
 interface ChunkyProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "disabled"> {
   variant?: Variant;
-  /** Set to disable. The text is shown to the player, so write a sentence. */
+  /**
+   * Any string disables the button, including an empty one. Truthiness would
+   * make an empty reason mean "enabled", which once let a player fire a call the
+   * rules were always going to refuse. Pass null to enable, a sentence to refuse.
+   */
   reason?: string | null;
   busy?: boolean;
   children: ReactNode;
 }
 
 export function Chunky({ variant = "primary", reason, busy, children, className, ...rest }: ChunkyProps) {
-  const disabled = Boolean(reason) || Boolean(busy);
+  const disabled = reason != null || Boolean(busy);
   return (
     <button
       type="button"
       {...rest}
       disabled={disabled}
-      title={reason ?? undefined}
+      title={reason || undefined}
       className={cx("chunky px-5", VARIANTS[variant], busy && "opacity-70", className)}
     >
       {busy ? "Working…" : children}

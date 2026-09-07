@@ -12,7 +12,6 @@
 // Nothing else in the codebase may divide a timestamp by a window length.
 
 export const GAME_WINDOW_SECONDS = 900;
-export const WINDOWS_PER_DAY = 96;
 
 /** The game window a moment falls in. */
 export function windowIdAt(unixSeconds: number): number {
@@ -30,7 +29,5 @@ export function secondsLeftInWindow(now: number = Date.now()): number {
   return GAME_WINDOW_SECONDS - (seconds % GAME_WINDOW_SECONDS);
 }
 
-/** The UTC day a game window belongs to. The daily call cap resets on this. */
-export function dayOfWindow(windowId: number): number {
-  return Math.floor(windowId / WINDOWS_PER_DAY);
-}
+// A window's day is the engine's arithmetic and stays there: `dayOf(rules, windowId)`.
+// A second copy here would be a rule with two homes.

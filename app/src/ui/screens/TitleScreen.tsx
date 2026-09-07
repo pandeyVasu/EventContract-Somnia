@@ -64,7 +64,16 @@ export function TitleScreen() {
 
           <Note className="text-xs text-faint">
             Runs on a test network. Nothing here is real money, and nothing leaves your wallet without
-            you clicking.
+            you clicking. First time here? Get free STT for fees at{" "}
+            <a
+              href="https://testnet.somnia.network"
+              target="_blank"
+              rel="noreferrer"
+              className="font-extrabold text-terracotta underline"
+            >
+              testnet.somnia.network
+            </a>
+            , then press Get test funds.
           </Note>
         </Panel>
       </div>
