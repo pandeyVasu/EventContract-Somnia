@@ -30,7 +30,7 @@
   }
 
   .pill {
-    @apply flex h-11 items-center gap-2 rounded-full border-[3px] border-bark bg-paper px-4 text-base font-extrabold text-ink shadow-drop;
+    @apply flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border-[3px] border-bark bg-paper px-4 text-base font-extrabold text-ink shadow-drop;
   }
 
   .inset {

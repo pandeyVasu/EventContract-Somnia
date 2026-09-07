@@ -27,9 +27,9 @@ interface HudProps {
 
 export function Hud({ view, tab, onTab, flash }: HudProps) {
   return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-[88px] items-center justify-between gap-4 px-8">
-      <div className="pointer-events-auto flex items-center gap-3">
-        <div className="flex h-12 items-center gap-2 rounded-2xl border-[3px] border-bark bg-terracotta pl-3 pr-4 text-cream shadow-drop">
+    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-[88px] items-center justify-between gap-3 px-4 xl:gap-4 xl:px-8">
+      <div className="pointer-events-auto flex min-w-0 items-center gap-2 xl:gap-3">
+        <div className="flex h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-2xl border-[3px] border-bark bg-terracotta pl-3 pr-4 text-cream shadow-drop">
           <WheatIcon size={24} />
           <span className="font-display text-xl font-semibold">Harvest Call</span>
         </div>
@@ -38,27 +38,30 @@ export function Hud({ view, tab, onTab, flash }: HudProps) {
           <span className="text-gold-ink"><CoinIcon size={20} /></span>
           <span className="tnum">{Math.floor(view.coins)}</span>
           {view.coinsExpiringSoon > 0 ? (
-            <span className="text-xs font-bold text-faint">
+            <span className="hidden text-xs font-bold text-faint lg:inline">
               {Math.floor(view.coinsExpiringSoon)} expire soon
             </span>
           ) : (
-            <span className="text-xs font-bold text-faint">Coins</span>
+            <span className="hidden text-xs font-bold text-faint lg:inline">Coins</span>
           )}
         </Pill>
 
         <Pill className={cx(flash === "time" && "animate-flash")}>
           <span className="text-sage-ink"><ClockIcon size={20} /></span>
-          <span className="tnum">{formatWindows(view.timeBank)}</span>
-          <span className="text-xs font-bold text-faint">saved</span>
+          <span className="tnum">{view.timeBank > 0 ? formatWindows(view.timeBank) : "none"}</span>
+          <span className="hidden text-xs font-bold text-faint lg:inline">saved</span>
         </Pill>
 
         <Pill>
           <CallPips left={view.callsLeftToday} total={view.dailyCallCap} />
-          <span className="text-sm">{view.callsLeftToday} calls left</span>
+          <span className="text-sm">
+            {view.callsLeftToday}
+            <span className="hidden lg:inline"> calls</span> left
+          </span>
         </Pill>
       </div>
 
-      <nav className="pointer-events-auto flex items-center gap-2.5">
+      <nav className="pointer-events-auto flex shrink-0 items-center gap-2 xl:gap-2.5">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -66,7 +69,7 @@ export function Hud({ view, tab, onTab, flash }: HudProps) {
             onClick={() => onTab(t.id)}
             aria-current={tab === t.id ? "page" : undefined}
             className={cx(
-              "flex h-11 items-center rounded-full border-[3px] border-bark px-[18px] font-display text-[17px] font-semibold text-ink shadow-drop transition-transform active:translate-y-1 active:shadow-none",
+              "flex h-11 shrink-0 items-center whitespace-nowrap rounded-full border-[3px] border-bark px-4 font-display text-[17px] font-semibold text-ink shadow-drop transition-transform active:translate-y-1 active:shadow-none xl:px-[18px]",
               tab === t.id ? "bg-gold" : "bg-paper",
             )}
           >
@@ -74,7 +77,7 @@ export function Hud({ view, tab, onTab, flash }: HudProps) {
           </button>
         ))}
         {view.address ? (
-          <Pill className="text-sm font-bold text-muted">
+          <Pill className="hidden text-sm font-bold text-muted lg:flex">
             <span className="inline-block h-2.5 w-2.5 rounded-full bg-sage-ink" aria-hidden />
             <span className="tnum">{shortAddress(view.address)}</span>
           </Pill>
