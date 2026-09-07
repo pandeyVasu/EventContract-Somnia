@@ -94,6 +94,8 @@ export interface ChainClient {
   getBinaryOrderBook(pool: `0x${string}`): Promise<OrderBook>;
   getBinaryBookParams(pool: `0x${string}`): Promise<BookGrid>;
   getOutcomeBalance(args: { outcomeToken: `0x${string}`; account: `0x${string}`; id: bigint }): Promise<bigint>;
+  /** Positional, not an options object. The rest of the client takes objects; this one does not. */
+  getErc20Balance?(token: `0x${string}`, account: `0x${string}`): Promise<bigint>;
 }
 
 export interface ChainTrader {
@@ -105,6 +107,8 @@ export interface ChainTrader {
     orderType: number;
   }): Promise<PlaceOrderResult>;
   redeem(params: { marketId: `0x${string}`; amount: bigint; outcomeIdx: 0 | 1 }): Promise<any>;
+  /** Testnet only: claim tUSDC. Present on the real trader, absent from some fakes. */
+  faucet?(args: Record<string, never>): Promise<any>;
 }
 
 /** Just enough of SomniaMarkets for the adapter and for a fake in tests. */

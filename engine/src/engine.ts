@@ -48,7 +48,8 @@ export function available(p: Player, kind: Resource, windowId: number): number {
     .reduce((n, l) => n + l.amount, 0);
 }
 
-function tierCap(rules: Rules, farm: Farm): number {
+/** Highest tier this farm may reach with the equipment it owns. */
+export function tierCap(rules: Rules, farm: Farm): number {
   let cap = rules.baseTierCap;
   for (const e of farm.equipment) cap = Math.max(cap, rules.equipment[e].unlocksTier);
   return Math.min(cap, rules.maxTier);

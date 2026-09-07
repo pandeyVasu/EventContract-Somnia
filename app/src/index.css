@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: theme("colors.grass");
+    color: theme("colors.ink");
+    font-family: theme("fontFamily.body");
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Nothing on screen is a raw number the player has to parse; keep digits aligned. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* The three surfaces every screen is built from. See the design spec, section 3.3. */
+  .panel {
+    @apply rounded-[18px] border-[3px] border-bark bg-paper shadow-panel;
+  }
+
+  .pill {
+    @apply flex h-11 items-center gap-2 rounded-full border-[3px] border-bark bg-paper px-4 text-base font-extrabold text-ink shadow-drop;
+  }
+
+  .inset {
+    @apply rounded-[14px] border-2 border-line bg-sand;
+  }
+
+  .chunky {
+    @apply rounded-2xl border-[3px] border-bark font-display font-semibold shadow-drop transition-transform;
+  }
+
+  .chunky:not(:disabled):active {
+    @apply translate-y-1 shadow-none;
+  }
+
+  .chunky:disabled {
+    @apply cursor-not-allowed border-[#b8a890] bg-line text-faint shadow-none;
+  }
+
+  .label {
+    @apply text-xs font-extrabold uppercase tracking-[0.1em] text-faint;
+  }
+
+  /* Headline sitting on the world rather than on paper. */
+  .on-world {
+    color: theme("colors.cream");
+    text-shadow: 0 3px 0 theme("colors.bark"), 0 6px 18px rgba(51, 41, 31, 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

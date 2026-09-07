@@ -8,16 +8,30 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@somnia-chain/markets-sdk": "^0.29.0",
+    "@tanstack/react-query": "^5.102.8",
     "farm-engine": "*",
-    "viem": "^2.21.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "viem": "^2.21.0",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "typescript": "^5.9.3"
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.5.5",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3"
   }
 }

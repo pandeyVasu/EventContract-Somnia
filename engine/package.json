@@ -15,5 +15,8 @@
   "devDependencies": {
     "@types/node": "^22.20.1",
     "typescript": "^5.9.3"
+  },
+  "exports": {
+    ".": "./src/index.ts"
   }
 }
