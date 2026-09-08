@@ -13,6 +13,8 @@
     "resolution": "node --env-file=../.env src/resolution.ts",
     "place": "node --env-file=../.env src/place.ts",
     "redeem": "node --env-file=../.env src/redeem.ts",
+    "combo": "node --env-file=../.env src/combo.ts",
+    "combo:live": "node --env-file=../.env src/combo.ts --place --watch",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {

@@ -159,6 +159,34 @@ test("a five-minute round is offered, where the old flat guard hid it", async ()
   assert.equal(live[0]!.intervalSec, 300);
 });
 
+test("the demo combination — one, five and fifteen minutes — is all offered at once", async () => {
+  // The demo shows the same game at three speeds: a call that resolves while
+  // the judge is watching, one that resolves within the pitch, and the
+  // quarter-hour round the farm's own clock is built around. All three have to
+  // be callable in the same moment, and the fastest has to come first.
+  const now = 1_700_000_000_000;
+  const nowSeconds = now / 1000;
+  const { ex } = fakeExchange({
+    liveMarkets: [
+      { marketId: "0x15b", poolAddress: POOL, asset: "BTC", mode: "reference", intervalSec: 900, expiry: nowSeconds + 800 },
+      { marketId: "0x01b", poolAddress: POOL, asset: "BTC", mode: "fixed", intervalSec: 60, expiry: nowSeconds + 44 },
+      { marketId: "0x05e", poolAddress: POOL, asset: "ETH", mode: "reference", intervalSec: 300, expiry: nowSeconds + 276 },
+      { marketId: "0x15e", poolAddress: POOL, asset: "ETH", mode: "reference", intervalSec: 900, expiry: nowSeconds + 800 },
+    ],
+  });
+
+  const live = await listLiveWindows(ex.client, now);
+  assert.deepEqual(live.map((w) => w.intervalSec), [60, 300, 900, 900], "shortest round first");
+  assert.equal(live[0]!.marketId, "0x01b", "a one-minute round leads, so the demo can settle on camera");
+
+  // Both assets remain callable, which is what makes BTC Up beside ETH Down work.
+  assert.deepEqual(tradeableAssets(live).sort(), ["BTC", "ETH"]);
+
+  // Each asset rides its own fastest round, not merely the fastest overall.
+  assert.equal(pickWindow(live, "BTC")!.intervalSec, 60);
+  assert.equal(pickWindow(live, "ETH")!.intervalSec, 300);
+});
+
 test("a round about to lock is still skipped, whatever its length", async () => {
   const now = 1_700_000_000_000;
   const nowSeconds = now / 1000;

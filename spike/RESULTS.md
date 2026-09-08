@@ -141,6 +141,64 @@ Three things this confirms for the adapter:
   won-or-lost decision. Both markets returned outcome 0 here, which is why the
   Up call won and the Down call lost.
 
+## Three round lengths in one run
+
+Run `node --env-file=../.env src/combo.ts --place --watch` (or `npm run combo:live`).
+
+The game wants the fastest feedback it can get, and a demo wants a call that
+settles while someone is watching. Both needed the short rounds to be real, so
+the combination test places one call on each of the 1-, 5- and 15-minute rounds
+in a single run, alternating the direction and the asset, then follows every one
+to settlement and redeems the winners.
+
+Two runs on 8 Sep 2026, from the same wallet:
+
+| Round | Asset | Call | Mode | Entry | Result |
+|---|---|---|---|---|---|
+| 1 min | BTC | Up | fixed | 0.718 | won, redeemed |
+| 5 min | BTC | Down | reference | 0.434 | lost |
+| 15 min | BTC | Up | reference | 0.968 | won, redeemed |
+| 1 min | BTC | Up | fixed | 0.021 | lost |
+| 5 min | ETH | Down | reference | 0.608 | lost |
+| 15 min | BTC | Up | reference | 0.383 | see the run log |
+
+Every one filled on the first attempt against a three-level book, and every one
+reached a real settlement. The 1-minute round is the important line: it fills,
+it resolves about a minute later, and the winner redeems, so the whole loop is
+demonstrable inside a single sentence of a pitch.
+
+### The one-minute rounds are direction calls, and here is the proof
+
+The 1- and 5-minute rounds are `mode: "fixed"`. A fixed round asks whether the
+price ended at or above a strike, which is only the same question as "did it go
+up" if the strike is the price at the round's own open.
+
+Nothing publishes the price a round settled at. The indexer and the chain both
+carry the strike and the winning outcome and nothing else, so the obvious check
+is unavailable. But consecutive rounds are contiguous — each round's
+`tradingStart` equals the previous round's `expiry` — so if the strike really is
+spot at the open, then the *next* round's strike is this round's settlement
+price. That turns the claim into something testable against history alone:
+
+> for every back-to-back pair, "the next strike is at or above this one" must
+> agree with "this round paid outcome 0".
+
+Across live BTC and ETH rounds at both lengths, **86 of 86 consecutive pairs
+agree**. A single disagreement would sink the reading; none appeared.
+`src/combo.ts --verify` re-runs that check on demand and places no orders.
+
+So the app treats `reference` and `fixed` as the two shapes of a direction call
+and refuses everything else. The player is never shown either word.
+
+### What this changed in the app
+
+- Discovery accepts both modes, and nothing beyond them.
+- The lock guard was a flat five minutes, which silently excluded every round
+  shorter than five minutes and left a quarter-hour round callable for only its
+  first ten. It now scales with the round: a sixth of it, never under twenty
+  seconds, never over five minutes.
+- Shortest round first, so a player always gets the fastest feedback available.
+
 ## Confidence for the build
 
 Every link the game depends on has now run against the real chain: fund, find a
