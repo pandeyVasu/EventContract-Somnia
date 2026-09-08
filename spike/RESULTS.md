@@ -160,10 +160,13 @@ Two runs on 8 Sep 2026, from the same wallet:
 | 15 min | BTC | Up | reference | 0.968 | won, redeemed |
 | 1 min | BTC | Up | fixed | 0.021 | lost |
 | 5 min | ETH | Down | reference | 0.608 | lost |
-| 15 min | BTC | Up | reference | 0.383 | see the run log |
+| 15 min | BTC | Up | reference | 0.383 | won, redeemed |
 
 Every one filled on the first attempt against a three-level book, and every one
-reached a real settlement. The 1-minute round is the important line: it fills,
+reached a real settlement: six calls, six settlements, three redemptions, no
+retries and no voids. Collateral moved 0.4903 down on the first run and 0.0795
+up on the second, while the farm rewards depended only on being right — which is
+the stake-independence the game is built on, seen from the money's side. The 1-minute round is the important line: it fills,
 it resolves about a minute later, and the winner redeems, so the whole loop is
 demonstrable inside a single sentence of a pitch.
 
