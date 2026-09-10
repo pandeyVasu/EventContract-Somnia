@@ -140,7 +140,7 @@ function RoundLengthPicker() {
     // wider than the space at any realistic window and sat on top of each other.
     <div className="flex max-w-full flex-col items-center gap-1.5">
       <span className="on-world text-[13px] font-extrabold">How soon do you want to know?</span>
-      <div className="flex max-w-full flex-wrap items-center justify-center gap-1 rounded-[22px] border-[3px] border-bark bg-sand p-1">
+      <div className="flex max-w-full flex-wrap items-center justify-center gap-1 rounded-[22px] border-[3px] border-bark bg-sand p-1 shadow-drop">
         <button
           type="button"
           onClick={choose(null)}
@@ -177,7 +177,16 @@ export function CallScreen() {
 
   return (
     <>
-      <div className="absolute inset-x-0 top-[104px] z-10 flex flex-col items-center gap-2 px-8">
+      {/*
+        One column, not two blocks pinned to fixed offsets.
+        The heading and the signs used to sit at top-[104px] and top-[250px],
+        which held only while the header stayed exactly the height it was the
+        day those numbers were written. Adding the round picker made it taller
+        and it slid underneath the signs. Laid out in flow, the signs go wherever
+        the header ends, whatever is in it, and it scrolls when a short window
+        cannot hold both.
+      */}
+      <div className="absolute inset-x-0 top-[96px] bottom-0 z-10 flex flex-col items-center gap-4 overflow-y-auto px-8 pb-36 pt-2">
         <h1 className="on-world m-0 text-center font-display text-[clamp(28px,3vw,40px)] font-semibold tracking-tight">
           Which way this round?
         </h1>
@@ -193,12 +202,12 @@ export function CallScreen() {
           </Pill>
         )}
         <RoundLengthPicker />
-      </div>
 
-      <div className="absolute inset-x-0 top-[250px] z-10 flex justify-center gap-[clamp(24px,8vw,140px)] px-8">
-        {view.assets.map((option) => (
-          <AssetSign key={option.asset} option={option} hint={hint} />
-        ))}
+        <div className="mt-1 flex w-full flex-wrap justify-center gap-[clamp(24px,8vw,140px)]">
+          {view.assets.map((option) => (
+            <AssetSign key={option.asset} option={option} hint={hint} />
+          ))}
+        </div>
       </div>
 
       {view.openCalls.length ? (
