@@ -1,5 +1,9 @@
 # Harvest Call
 
+**Play it: <https://somnia-hackathon-j8pn2fmrt-pandeyvasus-projects.vercel.app>**
+(Somnia Shannon testnet — you will need a browser wallet and free test funds;
+see [Wallet and test funds](#wallet-and-test-funds).)
+
 A farm game where the crops grow because you read the market correctly.
 
 Eight times a day you pick Bitcoin or Ethereum and say **Up** or **Down**. Call it
