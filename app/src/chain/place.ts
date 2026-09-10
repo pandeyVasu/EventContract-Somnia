@@ -76,21 +76,47 @@ export async function placeCall(
   const onchain = await ex.client.getMarketOnchain(window.marketId);
   if (onchain.status !== 1) return null;
 
-  const book = await ex.client.getBinaryOrderBook(window.pool);
-  const grid = await ex.client.getBinaryBookParams(window.pool);
+  /**
+   * Quote against the book as it is right now, and send at that price.
+   *
+   * Both halves have to be one step, because the price is only good for the
+   * book it was read from. The book here is three levels deep, so a round with
+   * any interest in it moves between the read and the send often enough to
+   * matter, and when it does the order can no longer fill at the protective
+   * price and the pool rejects it. Observed against a live five-minute round:
+   * the same call reverted, then went through untouched a minute later.
+   */
+  const quoteAndSend = async () => {
+    const book = await ex.client.getBinaryOrderBook(window.pool);
+    const grid = await ex.client.getBinaryBookParams(window.pool);
 
-  // The client's own quoteBinaryStake reads the live websocket store and returns
-  // null unless the market is being tailed. This helper works off a fetched book.
-  const quote = quoteBinaryStakeOverBook(book as any, sideFor(direction) as any, STAKE, ONE_COLLATERAL, grid as any);
-  if (!quote) return null;   // the book is too thin to fill a whole stake
+    // The client's own quoteBinaryStake reads the live websocket store and returns
+    // null unless the market is being tailed. This helper works off a fetched book.
+    const quote = quoteBinaryStakeOverBook(book as any, sideFor(direction) as any, STAKE, ONE_COLLATERAL, grid as any);
+    if (!quote) return null;   // the book is too thin to fill a whole stake
 
-  const res = await ex.trader.placeOrder({
-    pool: window.pool,
-    side: quote.side,
-    price: quote.yesPrice,
-    quantity: quote.quantity,
-    orderType: ORDER_TYPE.MARKET,
-  });
+    return ex.trader.placeOrder({
+      pool: window.pool,
+      side: quote.side,
+      price: quote.yesPrice,
+      quantity: quote.quantity,
+      orderType: ORDER_TYPE.MARKET,
+    });
+  };
+
+  // One retry, against a freshly read book. A rejection here costs gas and
+  // nothing else — no stake moves and the engine records no call — so trying
+  // again is cheap next to making the player press the button a second time
+  // without knowing why. Twice is the limit: a book that will not hold still
+  // across two reads is not going to on the third.
+  let res;
+  try {
+    res = await quoteAndSend();
+  } catch (first) {
+    console.warn("[farm] the book moved under the order, quoting again:", first);
+    res = await quoteAndSend();
+  }
+  if (!res) return null;
 
   const fills = res.fills ?? [];
   if (!fills.length) return null;
