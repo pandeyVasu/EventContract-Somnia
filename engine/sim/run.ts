@@ -30,19 +30,40 @@ interface Archetype {
   sessionsPerDay: number;       // windows played per day, 2 markets each
   hedge: boolean;               // Up AND Down on every market
   snipe: boolean;               // enter at 0.95 with 95% accuracy
-  pickDirection: (p: Player, rng: () => number) => Direction;
 }
 
-const needsDriven = (p: Player): Direction => (p.farms.some((f) => f.build) ? "down" : "up");
+/*
+ * Why there is no `pickDirection` here any more.
+ *
+ * Each archetype used to carry one, and a `needsDriven` implementation picked
+ * Down while a build was running and Up otherwise. The value was computed every
+ * call and then thrown away with `void wanted;`, so the archetypes claimed a
+ * behaviour the simulation never had.
+ *
+ * It was thrown away because it cannot be used, not by oversight. The market's
+ * result is fixed before anyone calls it, and the archetype fixes P(correct).
+ * Those two together already determine the direction: a correct call IS the
+ * result, a wrong call is its opposite. There is no freedom left for a
+ * preference to occupy. Feeding the preference into the wrong-call branch only
+ * — the other repair that suggests itself — would make intent govern the calls
+ * a player got wrong and not the ones they got right, which is backwards, and
+ * would skew the earned resource mix on exactly the losing calls that earn
+ * nothing.
+ *
+ * So the field is gone and the names below say what is actually simulated. A
+ * genuine needs-driven player would have to trade hit rate for resource choice
+ * — calling Down for Time when they read Up — and that is a different model
+ * whose numbers the cost tables have never been calibrated against.
+ */
 
 const ARCHETYPES: Archetype[] = [
-  { id: "casual-55%",  hitRate: 0.55, sessionsPerDay: 2, hedge: false, snipe: false, pickDirection: (_, r) => (r() < 0.5 ? "up" : "down") },
-  { id: "sharp-65%",   hitRate: 0.65, sessionsPerDay: 4, hedge: false, snipe: false, pickDirection: needsDriven },
-  { id: "allup-55%",   hitRate: 0.55, sessionsPerDay: 4, hedge: false, snipe: false, pickDirection: () => "up" },
-  { id: "perfect-100%",hitRate: 1.00, sessionsPerDay: 4, hedge: false, snipe: false, pickDirection: needsDriven },
-  { id: "coinflip-50%",hitRate: 0.50, sessionsPerDay: 4, hedge: false, snipe: false, pickDirection: needsDriven },
-  { id: "HEDGER",      hitRate: 0.50, sessionsPerDay: 2, hedge: true,  snipe: false, pickDirection: () => "up" },
-  { id: "SNIPER",      hitRate: 0.50, sessionsPerDay: 4, hedge: false, snipe: true,  pickDirection: needsDriven },
+  { id: "casual-55%",  hitRate: 0.55, sessionsPerDay: 2, hedge: false, snipe: false },
+  { id: "sharp-65%",   hitRate: 0.65, sessionsPerDay: 4, hedge: false, snipe: false },
+  { id: "allup-55%",   hitRate: 0.55, sessionsPerDay: 4, hedge: false, snipe: false },
+  { id: "perfect-100%",hitRate: 1.00, sessionsPerDay: 4, hedge: false, snipe: false },
+  { id: "coinflip-50%",hitRate: 0.50, sessionsPerDay: 4, hedge: false, snipe: false },
+  { id: "HEDGER",      hitRate: 0.50, sessionsPerDay: 2, hedge: true,  snipe: false },
+  { id: "SNIPER",      hitRate: 0.50, sessionsPerDay: 4, hedge: false, snipe: true  },
 ];
 
 /** Greedy spend: equipment when it gates the next tier, then upgrade, then next template. */
@@ -119,13 +140,12 @@ export function simulate(rules: Rules, seed: number): GameState {
           const truth = o.result === "void" ? (rng() < 0.5 ? "up" : "down") : o.result;
           const acc = a.snipe ? 0.95 : a.hitRate;
           const price = a.snipe ? 0.95 : ENTRY_MIN + rng() * (ENTRY_MAX - ENTRY_MIN);
-          const wanted = a.pickDirection(s.players[a.id]!, rng);
-          // A player with hit rate h is right with probability h regardless of what they "wanted";
-          // the wanted direction only matters when they are right (it is what they called).
+          // A player with hit rate h is right with probability h. Being right
+          // is the same thing as having called the result, so the direction
+          // follows from the two and is not a separate choice. Which resource
+          // they earn therefore tracks the market, not their needs.
           const correct = rng() < acc;
           const direction: Direction = correct ? truth : truth === "up" ? "down" : "up";
-          // needs-driven players still get their wanted resource only when truth agrees; record intent for realism
-          void wanted;
           events.push({ type: "CALL_PLACED", playerId: a.id, callId: `${a.id}:${o.marketId}`, marketId: o.marketId, asset: o.asset, windowId: w, direction, entryPrice: price });
         }
         for (const e of events) s = applySafe(rules, s, e).state;

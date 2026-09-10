@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SPEC_RULES, FIXED_RULES, LOCKED_RULES, rewardUnits, type Rules } from "../src/rules.ts";
-import { initialState, reduce, available } from "../src/engine.ts";
+import { initialState, reduce, applySafe, available } from "../src/engine.ts";
 import { farmValue, leaderboard } from "../src/score.ts";
 import { RuleViolation, type Event, type GameState } from "../src/types.ts";
 
@@ -355,4 +355,35 @@ test("LOCKED cost tables: Wheat T1->T5 with equipment = 36 coins, T4 path = 16",
   const t4 = L.upgrades.filter((u) => u.from <= 3).reduce((n, u) => n + u.cost, 0)
     + L.equipment.irrigation.cost + L.equipment.harvester.cost;
   assert.equal(t4, 16);
+});
+
+test("the engine refuses a call on a market that has already settled", () => {
+  // The adapter refuses these too, by re-reading the market's status before it
+  // writes. That is a safeguard against a stale market list; this is the rule
+  // itself, and it has to hold from the engine's own state alone.
+  let s = run(L, [join(), call("a", "m", "up", 0.5), settle("m", "up", 1)]);
+  assert.equal(s.resolvedMarkets["m"], true);
+
+  const after = applySafe(L, s, {
+    type: "CALL_PLACED", playerId: P, callId: "late", marketId: "m",
+    asset: "BTC", windowId: 1, direction: "down", entryPrice: 0.5,
+  });
+  assert.equal(after.error?.reason, "MARKET_RESOLVED");
+  assert.equal(after.state.players[P]!.calls.length, 1, "the late call was not recorded");
+
+  // A market nobody called still gets remembered, so a call cannot slip in
+  // behind a settlement that arrived first.
+  s = reduce(L, s, { type: "CALL_SETTLED", marketId: "never-called", result: "down", settledAtWindow: 1 });
+  const sneak = applySafe(L, s, {
+    type: "CALL_PLACED", playerId: P, callId: "sneak", marketId: "never-called",
+    asset: "ETH", windowId: 1, direction: "up", entryPrice: 0.5,
+  });
+  assert.equal(sneak.error?.reason, "MARKET_RESOLVED");
+
+  // An open market is still perfectly callable.
+  const ok = applySafe(L, s, {
+    type: "CALL_PLACED", playerId: P, callId: "fine", marketId: "open-one",
+    asset: "BTC", windowId: 1, direction: "up", entryPrice: 0.5,
+  });
+  assert.equal(ok.error, null);
 });

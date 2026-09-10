@@ -84,6 +84,8 @@ export interface Store {
   /** Apply an event. Returns the violation if the rules refused it; nothing is saved then. */
   dispatch(ev: Event): RuleViolation | null;
   subscribe(fn: () => void): () => void;
+  /** Stop listening for other tabs. Call when the store is replaced. */
+  dispose(): void;
   /** Throw the save away. Only the player asks for this. */
   reset(): void;
 }
@@ -113,9 +115,34 @@ export function createStore(address: string): Store {
     writeLog(address, log);
   }
 
+  /**
+   * Another tab wrote to this wallet's log.
+   *
+   * Two tabs used to keep separate in-memory states over one key and overwrite
+   * each other without either noticing — a call placed in one would vanish when
+   * the other next saved. The `storage` event fires only in the tabs that did
+   * NOT write, so this is the other tab hearing about it. Re-reading and
+   * replaying makes them converge on the same history rather than drift.
+   *
+   * Two dispatches genuinely at the same instant can still lose one: the log is
+   * last-write-wins and merging two divergent branches would need identity on
+   * every event, which they do not all have. Converging afterwards is the part
+   * that matters, and the losing call is refused by the chain anyway.
+   */
+  const onStorage = (e: StorageEvent) => {
+    if (e.key !== keyFor(address)) return;
+    log = readLog(address);
+    state = replay(log);
+    notify();
+  };
+  window.addEventListener("storage", onStorage);
+
   return {
     playerId,
     getState: () => state,
+    dispose() {
+      window.removeEventListener("storage", onStorage);
+    },
     dispatch(ev: Event) {
       const out = applySafe(RULES, state, ev);
       state = out.state;

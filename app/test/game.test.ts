@@ -67,14 +67,14 @@ test("open markets are empty for a player who does not exist", () => {
 test("a tick is only produced when the window has actually moved", () => {
   const now = Date.now();
   const current = currentWindowId(now);
-  assert.equal(tickEvent({ windowId: current, players: {} }, now), null);
-  const behind = tickEvent({ windowId: current - 4, players: {} }, now);
+  assert.equal(tickEvent({ ...initialState(current) }, now), null);
+  const behind = tickEvent({ ...initialState(current - 4) }, now);
   assert.deepEqual(behind, { type: "WINDOW_TICK", windowId: current });
 });
 
 test("a clock that has run backwards never produces an event the engine would refuse", () => {
   const now = Date.now();
-  assert.equal(tickEvent({ windowId: currentWindowId(now) + 99, players: {} }, now), null);
+  assert.equal(tickEvent(initialState(currentWindowId(now) + 99), now), null);
 });
 
 test("settlements become one engine event each, stamped with the settling window", () => {

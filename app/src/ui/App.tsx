@@ -13,6 +13,13 @@ import { FarmScreen } from "./screens/FarmScreen.tsx";
 import { SettlementOverlay } from "./screens/SettlementOverlay.tsx";
 import { TitleScreen } from "./screens/TitleScreen.tsx";
 
+/** What each tab is, for the screen-reader label on the main region. */
+const TAB_LABELS: Record<string, string> = {
+  call: "Make a call",
+  farm: "Your farm",
+  board: "The board",
+};
+
 function Game() {
   const { view, actions, message, dismissMessage, settlement, dismissSettlement, wrongChain } = useGame();
   const [tab, setTab] = useState<Tab>("call");
@@ -46,9 +53,17 @@ function Game() {
 
       <Hud view={view} tab={tab} onTab={setTab} flash={flash} />
 
-      {tab === "call" ? <CallScreen /> : null}
-      {tab === "farm" ? <FarmScreen /> : null}
-      {tab === "board" ? <BoardScreen /> : null}
+      {/*
+        The screens are the page's main region. `contents` keeps the element out
+        of the layout entirely — each screen positions itself against the world
+        behind it — so this adds the landmark a screen reader navigates by
+        without moving a single pixel. The Hud already supplies header and nav.
+      */}
+      <main className="contents" aria-label={TAB_LABELS[tab]}>
+        {tab === "call" ? <CallScreen /> : null}
+        {tab === "farm" ? <FarmScreen /> : null}
+        {tab === "board" ? <BoardScreen /> : null}
+      </main>
 
       {wrongChain ? (
         <div className="absolute inset-x-0 bottom-0 z-30 flex justify-center p-4">

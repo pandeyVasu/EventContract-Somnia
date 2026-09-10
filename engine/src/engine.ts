@@ -6,7 +6,7 @@ import { RuleViolation, type Event, type Farm, type GameState, type Player, type
 // whether that is a UI error or a logged rejection (see `applySafe`).
 
 export function initialState(windowId = 0): GameState {
-  return { windowId, players: {} };
+  return { windowId, players: {}, resolvedMarkets: {} };
 }
 
 function emptyStats(): PlayerStats {
@@ -131,6 +131,9 @@ export function reduce(rules: Rules, prev: GameState, ev: Event): GameState {
       const p = getPlayer(state, ev.playerId);
       if (!(ev.entryPrice > 0 && ev.entryPrice < 1)) throw new RuleViolation("BAD_PRICE", String(ev.entryPrice));
       if (p.calls.some((c) => c.id === ev.callId)) throw new RuleViolation("DUPLICATE_CALL", ev.callId);
+      if (state.resolvedMarkets[ev.marketId]) {
+        throw new RuleViolation("MARKET_RESOLVED", ev.marketId);
+      }
       const day = dayOf(rules, state.windowId);
       const used = p.callsByDay[day] ?? 0;
       if (used >= rules.dailyCallCap) throw new RuleViolation("DAILY_CAP", `${used}/${rules.dailyCallCap}`);
@@ -154,6 +157,9 @@ export function reduce(rules: Rules, prev: GameState, ev: Event): GameState {
     }
 
     case "CALL_SETTLED": {
+      // Remembered whether or not this player had a call on it, so a later call
+      // on the same market is refused even if the settlement arrived first.
+      state.resolvedMarkets[ev.marketId] = true;
       const expires = ev.settledAtWindow + rules.expiryRounds;
       for (const p of Object.values(state.players)) {
         for (const c of p.calls) {

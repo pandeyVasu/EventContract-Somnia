@@ -4,6 +4,7 @@
 // engine, the exchange or a timer. If a component needs to know a rule, the rule
 // belongs in the engine and its answer belongs in `buildView`.
 
+import { initialState } from "farm-engine";
 import type { EquipmentId, GameState } from "farm-engine";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useAccount, useConnect, useDisconnect, useSwitchChain, useWalletClient } from "wagmi";
@@ -48,7 +49,7 @@ export interface Game {
 
 const GameContext = createContext<Game | null>(null);
 
-const EMPTY_STORE_STATE: GameState = { windowId: 0, players: {} };
+const EMPTY_STORE_STATE: GameState = initialState(0);
 
 function useStoreState(store: Store | null) {
   const subscribe = useCallback((fn: () => void) => (store ? store.subscribe(fn) : () => {}), [store]);
@@ -74,6 +75,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   // One store per wallet. Switching wallets switches games.
   const store = useMemo(() => (address ? createStore(address) : null), [address]);
+
+  // The store listens for other tabs, so the old one has to be told to stop
+  // when the wallet changes or the app unmounts.
+  useEffect(() => () => store?.dispose(), [store]);
   const state = useStoreState(store);
   const playerId = address ? playerIdFor(address) : "";
 

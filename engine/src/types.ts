@@ -61,6 +61,16 @@ export interface Player {
 export interface GameState {
   windowId: number;
   players: Record<string, Player>;
+  /**
+   * Markets that have already settled, by id.
+   *
+   * A call on one of these is not a prediction — the answer is known. The
+   * adapter refuses them too, by re-reading the market's status before it
+   * writes, but that is an infrastructure safeguard and this is a rule: the
+   * engine must be able to say no on its own, from nothing but its own state,
+   * or the invariant only holds as long as the caller is well behaved.
+   */
+  resolvedMarkets: Record<string, true>;
 }
 
 export type Event =

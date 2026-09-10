@@ -58,12 +58,13 @@ export function FarmScene({ tier, equipment, preset = "stage", className }: Farm
   const { ox, oy } = ORIGINS[preset];
   const hasShed = equipment.includes("shed");
   const hasHarvester = equipment.includes("harvester");
+  const hasIrrigation = equipment.includes("irrigation");
   // Trees on the left would sit behind the title screen's headline.
   const trees = preset === "title" ? TREES.filter(([i]) => i >= 2) : TREES;
 
   const elements = useMemo(
-    () => draw({ ox, oy, tier, hasShed, hasHarvester, trees }),
-    [ox, oy, tier, hasShed, hasHarvester, trees],
+    () => draw({ ox, oy, tier, hasShed, hasHarvester, hasIrrigation, trees }),
+    [ox, oy, tier, hasShed, hasHarvester, hasIrrigation, trees],
   );
 
   return (
@@ -85,10 +86,11 @@ interface DrawArgs {
   tier: number;
   hasShed: boolean;
   hasHarvester: boolean;
+  hasIrrigation: boolean;
   trees: [number, number, number][];
 }
 
-function draw({ ox, oy, tier, hasShed, hasHarvester, trees }: DrawArgs): ReactElement[] {
+function draw({ ox, oy, tier, hasShed, hasHarvester, hasIrrigation, trees }: DrawArgs): ReactElement[] {
   const c = (i: number, j: number, dy = 0): [number, number] => [ox + (i - j) * TW, oy + (i + j) * TH + dy];
   const pts = (arr: [number, number][]) => arr.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const out: ReactElement[] = [];
@@ -189,7 +191,13 @@ function draw({ ox, oy, tier, hasShed, hasHarvester, trees }: DrawArgs): ReactEl
   for (let j = 0; j < ROWS; j++) line(c(0.15, j + 0.5, -LIFT), c(COLS - 0.15, j + 0.5, -LIFT), P.furrow, 2.2);
 
   // Irrigation: the channel only runs once the equipment is in.
-  if (tier >= 3) {
+  //
+  // Asked of the equipment directly, the way the shed and the harvester are.
+  // This was a tier number, which happened to agree because irrigation is what
+  // unlocks tier 3 — but it meant the picture was reading a rule's consequence
+  // instead of the thing it is drawing, and would have quietly gone wrong the
+  // moment that number moved in rules.ts.
+  if (hasIrrigation) {
     for (let i = 0; i < COLS; i++) tile(i, ROWS, P.water, 0, { stroke: P.waterEdge, strokeWidth: 0.8 });
     for (let i = 0; i < COLS; i++) {
       const [x, y] = c(i + 0.5, ROWS + 0.5);
@@ -217,6 +225,11 @@ function draw({ ox, oy, tier, hasShed, hasHarvester, trees }: DrawArgs): ReactEl
 
   // The crop. Two plants a tile, drawn back to front. Heads arrive at tier 3,
   // and a taller, denser stand at tier 4 and up.
+  //
+  // These two stay plain numbers on purpose. They are not a rule wearing a
+  // disguise — nothing in rules.ts says a crop grows heads — they are how this
+  // drawing spends the five tiers it is given. Pointing them at the equipment
+  // table would tie the artwork to costs it has no business knowing.
   const heads = tier >= 3;
   const lush = tier >= 4;
   const plants: [number, number][] = [];
