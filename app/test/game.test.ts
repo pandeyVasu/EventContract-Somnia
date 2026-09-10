@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { LOCKED_RULES, initialState, reduce, type Event, type GameState } from "farm-engine";
 import { currentWindowId } from "../src/chain/clock.ts";
 import { openMarketIds, redeemablePairs, settlementEvents, tickEvent } from "../src/game/loop.ts";
-import { buildView, formatCoins, formatCoinsWithUnit, formatCountdown, formatWait, formatWindows } from "../src/game/view.ts";
+import { buildView, formatCoins, formatCoinsWithUnit, formatCountdown, formatWait, formatWindows, isNearlyDecided } from "../src/game/view.ts";
 import type { LiveWindow, Settlement } from "../src/chain/types.ts";
 
 const R = LOCKED_RULES;
@@ -39,8 +39,12 @@ function placed(marketId: `0x${string}`, asset: string, direction: "up" | "down"
   return { type: "CALL_PLACED", playerId: ME, callId, marketId, asset, windowId: 1_000_000, direction, entryPrice };
 }
 
-function view(state: GameState, windows: LiveWindow[] = []) {
-  return buildView({ rules: R, state, playerId: ME, address: ME, windows, now: NOW });
+function view(
+  state: GameState,
+  windows: LiveWindow[] = [],
+  entries?: Record<string, { up: number | null; down: number | null }>,
+) {
+  return buildView({ rules: R, state, playerId: ME, address: ME, windows, now: NOW, entries });
 }
 
 // --- loop: the three things that happen without the player ------------------
@@ -361,4 +365,37 @@ test("an open call carries the real time until it settles", () => {
 test("a call whose round has left the live list is settling now, not stuck", () => {
   const s = stateWith([placed(BTC_MARKET, "BTC", "up")]);
   assert.equal(view(s, []).openCalls[0]!.settlesInSeconds, null);
+});
+
+// --- warning the player about a round that is already decided ---------------
+
+test("a round is called nearly decided only once the reward floor is doing the work", () => {
+  // The player sees no prices, so the game has to tell them when being right is
+  // about to be worth almost nothing. The line sits exactly where the reward
+  // curve bottoms out, so it moves if the curve ever does.
+  assert.equal(isNearlyDecided(R, 0.98), true);
+  assert.equal(isNearlyDecided(R, 0.95), true, "at the floor itself");
+  assert.equal(isNearlyDecided(R, 0.9), false, "a fifth of a normal reward is still a reward");
+  assert.equal(isNearlyDecided(R, 0.5), false);
+
+  // No quote means no opinion, never a warning.
+  assert.equal(isNearlyDecided(R, null), false);
+  assert.equal(isNearlyDecided(R, undefined), false);
+});
+
+test("the warning reaches the asset the player is about to call", () => {
+  const state = stateWith([]);
+  const windows = [windowAt("BTC", BTC_MARKET)];
+
+  // Up all but settled, Down the long shot on the other side of the same book.
+  const v = view(state, windows, { [BTC_MARKET]: { up: 0.98, down: 0.02 } });
+  const btc = v.assets.find((a) => a.asset === "BTC")!;
+  assert.equal(btc.nearlyDecided.up, true);
+  assert.equal(btc.nearlyDecided.down, false);
+
+  // An asset with no open round is never marked, and neither is one never quoted.
+  const eth = v.assets.find((a) => a.asset === "ETH")!;
+  assert.deepEqual(eth.nearlyDecided, { up: false, down: false });
+  const unquoted = view(state, windows).assets.find((a) => a.asset === "BTC")!;
+  assert.deepEqual(unquoted.nearlyDecided, { up: false, down: false });
 });

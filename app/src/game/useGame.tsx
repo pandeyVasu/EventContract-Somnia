@@ -13,6 +13,7 @@ import { getExchange, releaseExchange } from "../chain/exchange.ts";
 import { placeCall } from "../chain/place.ts";
 import { redeemSettled } from "../chain/redeem.ts";
 import { pollSettlements } from "../chain/settle.ts";
+import { quoteEntries } from "../chain/place.ts";
 import { listLiveWindows, pickWindow } from "../chain/windows.ts";
 import type { Direction, Exchange, LiveWindow, Settlement } from "../chain/types.ts";
 import { CHAIN } from "../chain/wagmi.ts";
@@ -65,6 +66,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState<string | null>(null);
   const [windows, setWindows] = useState<LiveWindow[]>([]);
   const [settlementQueue, setSettlementQueue] = useState<string[]>([]);
+  const [entries, setEntries] = useState<Record<string, { up: number | null; down: number | null }>>({});
   const [now, setNow] = useState(() => Date.now());
 
   // One store per wallet. Switching wallets switches games.
@@ -122,6 +124,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (!alive) return;
         misses = 0;
         setWindows(live);
+
+        // What each round would cost to call, so the game can warn about one
+        // that is already decided. Never shown as a price. A book that will not
+        // quote is not worth a word to the player, so a failure here is silent
+        // and simply leaves the round unannotated.
+        const quoted: Record<string, { up: number | null; down: number | null }> = {};
+        for (const w of live) {
+          try {
+            quoted[w.marketId] = await quoteEntries(exchange, w);
+          } catch {
+            // no opinion on this round
+          }
+        }
+        if (alive) setEntries(quoted);
       } catch (e) {
         console.warn("[farm] could not read open rounds:", e);
         // One failure is a hiccup. Three in a row is the player staring at an
@@ -291,8 +307,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   // --- what the screens see ------------------------------------------------
   const view = useMemo(
-    () => buildView({ rules: RULES, state, playerId, address: address ?? null, windows, now }),
-    [state, playerId, address, windows, now],
+    () => buildView({ rules: RULES, state, playerId, address: address ?? null, windows, now, entries }),
+    [state, playerId, address, windows, now, entries],
   );
 
   // The overlay shows one finished call at a time, oldest first.

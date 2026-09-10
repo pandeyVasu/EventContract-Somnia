@@ -36,6 +36,32 @@ export function entryPriceFrom(yesPriceRaw: bigint, direction: Direction): numbe
 }
 
 /**
+ * What a call would enter at right now, for both directions, without placing
+ * anything.
+ *
+ * The player is never shown a price and never will be. This exists so the game
+ * can tell them something they otherwise cannot know: that a round is so nearly
+ * decided that calling it right is worth almost nothing. Without it the only
+ * way to discover that is to spend a call and be disappointed.
+ *
+ * One book read answers both directions, since Up and Down are two sides of the
+ * same book. Returns nulls when the book is too thin to quote, which reads the
+ * same as "no opinion" upstream.
+ */
+export async function quoteEntries(
+  ex: Exchange,
+  window: LiveWindow,
+): Promise<{ up: number | null; down: number | null }> {
+  const book = await ex.client.getBinaryOrderBook(window.pool);
+  const grid = await ex.client.getBinaryBookParams(window.pool);
+  const price = (direction: Direction): number | null => {
+    const quote = quoteBinaryStakeOverBook(book as any, sideFor(direction) as any, STAKE, ONE_COLLATERAL, grid as any);
+    return quote ? entryPriceFrom(quote.yesPrice, direction) : null;
+  };
+  return { up: price("up"), down: price("down") };
+}
+
+/**
  * Place a call and return what the engine needs, or null when nothing happened on
  * chain. Null is not an error: an order that fills nothing is simply not a call,
  * and no CALL_PLACED may be emitted for it.

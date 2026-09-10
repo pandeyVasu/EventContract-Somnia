@@ -25,6 +25,12 @@ export interface AssetOption {
   calledDirection: Direction | null;
   /** Seconds until this asset's round settles, or null when nothing is open. */
   settlesInSeconds: number | null;
+  /**
+   * Per direction: this round is so nearly decided that calling it right is
+   * worth only the floor. The player cannot see prices, so without this the
+   * only way to find out is to spend a call on it.
+   */
+  nearlyDecided: { up: boolean; down: boolean };
 }
 
 export interface EquipmentOption {
@@ -117,6 +123,21 @@ const EQUIPMENT_LABELS: Record<EquipmentId, string> = {
   harvester: "Harvester",
   shed: "Shed",
 };
+
+/**
+ * Has the reward curve bottomed out on this side?
+ *
+ * True when being right would pay no more than the floor, which happens only
+ * when the round is already all but settled. Derived from the rules rather than
+ * a threshold of its own, so it moves if the reward curve ever does.
+ */
+export function isNearlyDecided(rules: Rules, entry: number | null | undefined): boolean {
+  if (entry == null) return false;
+  // A hair of tolerance, because the curve reaches the floor through division:
+  // at a 0.95 entry (1 - 0.95) / 0.5 is 0.10000000000000009, not 0.1, and an
+  // exact comparison would miss the very case this exists to catch.
+  return rewardUnits(rules, entry) <= rules.minRewardUnits + 1e-9;
+}
 
 /**
  * A coin amount as the player should read it: "3", "1.6", "0.1".
@@ -266,10 +287,12 @@ function farmView(rules: Rules, p: Player, farm: Player["farms"][number], coins:
 }
 
 function assetOptions(
+  rules: Rules,
   p: Player,
   windows: LiveWindow[],
   callsLeft: number,
   now: number,
+  entries: Record<string, { up: number | null; down: number | null }> | undefined,
 ): AssetOption[] {
   const known = ["BTC", "ETH"];
   const assets = [...new Set([...known, ...windows.map((w) => w.asset)])];
@@ -295,7 +318,19 @@ function assetOptions(
       state = { kind: "closed", reason: "No calls left today. They come back at midnight." };
     } else state = { kind: "open" };
 
-    return { asset, label: assetLabel(asset), state, calledDirection: openCall?.direction ?? null, settlesInSeconds };
+    const entry = window ? entries?.[window.marketId] : undefined;
+
+    return {
+      asset,
+      label: assetLabel(asset),
+      state,
+      calledDirection: openCall?.direction ?? null,
+      settlesInSeconds,
+      nearlyDecided: {
+        up: isNearlyDecided(rules, entry?.up),
+        down: isNearlyDecided(rules, entry?.down),
+      },
+    };
   });
 }
 
@@ -306,9 +341,11 @@ export interface ViewInput {
   address: string | null;
   windows: LiveWindow[];
   now: number;
+  /** What each open round would enter at, by marketId. Absent until first quoted. */
+  entries?: Record<string, { up: number | null; down: number | null }>;
 }
 
-export function buildView({ rules, state, playerId, address, windows, now }: ViewInput): GameView {
+export function buildView({ rules, state, playerId, address, windows, now, entries }: ViewInput): GameView {
   const p = state.players[playerId];
   const windowId = state.windowId;
 
@@ -364,7 +401,7 @@ export function buildView({ rules, state, playerId, address, windows, now }: Vie
       : null,
     windowId,
     coinsExpiringSoon,
-    assets: assetOptions(p, windows, callsLeftToday, now),
+    assets: assetOptions(rules, p, windows, callsLeftToday, now, entries),
     openCalls: calls.filter((c) => c.outcome === "open").reverse(),
     finishedCalls: calls.filter((c) => c.outcome !== "open").reverse(),
     farms: p.farms.map((f) => farmView(rules, p, f, coins)),

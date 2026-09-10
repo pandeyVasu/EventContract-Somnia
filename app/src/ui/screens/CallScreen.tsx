@@ -8,8 +8,8 @@ import { useGame } from "../../game/useGame.tsx";
 import type { Direction } from "../../chain/types.ts";
 
 function DirectionButton({
-  direction, reason, busy, onClick,
-}: { direction: Direction; reason: string | null; busy: boolean; onClick(): void }) {
+  direction, reason, busy, nearlyDecided, onClick,
+}: { direction: Direction; reason: string | null; busy: boolean; nearlyDecided: boolean; onClick(): void }) {
   const up = direction === "up";
   return (
     <Chunky
@@ -23,10 +23,28 @@ function DirectionButton({
       <span className="font-display text-xl font-semibold">{up ? "Up" : "Down"}</span>
       <span className="flex items-center gap-1.5 text-xs font-extrabold">
         {up ? <CoinIcon size={13} /> : <ClockIcon size={13} />}
-        pays {up ? "Coins" : "Time"}
+        {nearlyDecided ? "pays very little" : `pays ${up ? "Coins" : "Time"}`}
       </span>
     </Chunky>
   );
+}
+
+/**
+ * What the sign says under the buttons.
+ *
+ * A round that is nearly over has usually gone one way already, and calling
+ * that way is right but worth almost nothing. The player has no prices to read,
+ * so the game has to say it in words or they spend a call finding out.
+ */
+function noteFor(option: AssetOption, closed: boolean, hint: string): string {
+  if (closed) return (option.state as { reason: string }).reason;
+  const settled = (["up", "down"] as Direction[]).filter((d) => option.nearlyDecided[d]);
+  if (settled.length === 1) {
+    const decided = settled[0] === "up" ? "Up" : "Down";
+    const other = settled[0] === "up" ? "Down" : "Up";
+    return `This round has all but gone ${decided} already, so calling ${decided} earns very little. ${other} is the long shot.`;
+  }
+  return hint;
 }
 
 function AssetSign({ option, hint }: { option: AssetOption; hint: string }) {
@@ -61,12 +79,13 @@ function AssetSign({ option, hint }: { option: AssetOption; hint: string }) {
               direction={d}
               reason={closed ? (option.state as { reason: string }).reason : null}
               busy={pending === `call:${option.asset}:${d}`}
+              nearlyDecided={option.nearlyDecided[d]}
               onClick={() => void actions.placeCall(option.asset, d)}
             />
           ))}
         </div>
 
-        <Note className="text-center">{closed ? (option.state as { reason: string }).reason : hint}</Note>
+        <Note className="text-center">{noteFor(option, closed, hint)}</Note>
       </Panel>
       {/* The post that makes the panel a sign standing in the field. */}
       <div className="mt-1.5 h-[70px] w-[18px] rounded-b-md border-[3px] border-t-0 border-bark bg-plank" aria-hidden />
