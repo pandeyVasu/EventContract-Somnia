@@ -17,7 +17,7 @@ import { pollSettlements } from "../chain/settle.ts";
 import { quoteEntries } from "../chain/place.ts";
 import { listLiveWindows, pickWindow } from "../chain/windows.ts";
 import type { Direction, Exchange, LiveWindow, Settlement } from "../chain/types.ts";
-import { CHAIN } from "../chain/wagmi.ts";
+import { CHAIN, pickConnector } from "../chain/wagmi.ts";
 import { SETTLE_POLL_MS, TICK_MS, WINDOWS_POLL_MS, openMarketIds, pendingPairs, redeemablePairs, settlementEvents, tickEvent } from "./loop.ts";
 import { due, enqueue, exhausted, loadQueue, readQueue, recordFailure, remove, saveQueue } from "./redeemQueue.ts";
 import { RULES, createStore, playerIdFor, type Store } from "./store.ts";
@@ -304,8 +304,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connectWallet = useCallback(async () => {
-    const connector = connectors[0];
-    if (!connector) throw new Error("no wallet connector");
+    const connector = pickConnector(connectors);
+    if (!connector) {
+      throw new Error("No wallet was found in this browser. Install one, then reload the page.");
+    }
     if (!isConnected) await connectAsync({ connector });
     // The wallet may already be on Shannon, or may refuse to move; the banner covers both.
     await switchChainAsync({ chainId: CHAIN.id }).catch(() => {});

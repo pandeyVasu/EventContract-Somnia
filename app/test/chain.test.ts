@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { LOCKED_RULES, dayOf } from "farm-engine";
 import { GAME_WINDOW_SECONDS, currentWindowId, secondsLeftInWindow, windowIdAt } from "../src/chain/clock.ts";
 import { listLiveWindows, minSecondsLeft, pickWindow, tradeableAssets } from "../src/chain/windows.ts";
+import { pickConnector } from "../src/chain/wagmi.ts";
 import { ONE_COLLATERAL, entryPriceFrom, outcomeIdxFor, placeCall, sideFor } from "../src/chain/place.ts";
 import { pollSettlements, readSettlement } from "../src/chain/settle.ts";
 import { redeemCall } from "../src/chain/redeem.ts";
@@ -342,4 +343,25 @@ test("a redemption that reverted is reported as reverted, not as a payout", asyn
   assert.equal(r.skipped, "reverted");
   assert.equal(r.redeemed, 0n, "nothing came back, whatever the receipt looked like");
   assert.equal(r.txHash, "0xdead", "the hash is kept so the failure can be looked up");
+});
+
+// --- choosing between wallets ----------------------------------------------
+
+test("a browser with several wallets connects to MetaMask, not whichever is first", () => {
+  // wagmi lists every wallet it discovers plus a generic connector pointed at
+  // window.ethereum. Taking the first handed a Brave user their built-in wallet
+  // instead of the MetaMask the setup steps told them to install.
+  const brave = { id: "com.brave.wallet", name: "Brave Wallet" };
+  const metamask = { id: "io.metamask", name: "MetaMask" };
+  const generic = { id: "injected", name: "Injected", type: "injected" };
+
+  assert.equal(pickConnector([generic, brave, metamask])!.id, "io.metamask");
+  assert.equal(pickConnector([metamask, brave])!.id, "io.metamask");
+
+  // No MetaMask: take a wallet that actually announced itself over the shim.
+  assert.equal(pickConnector([generic, brave])!.id, "com.brave.wallet");
+
+  // One wallet, or only the shim, still works.
+  assert.equal(pickConnector([generic])!.id, "injected");
+  assert.equal(pickConnector([]), undefined, "and nothing is not a crash");
 });
