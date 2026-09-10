@@ -60,7 +60,11 @@ function AssetSign({ option, hint }: { option: AssetOption; hint: string }) {
             <div className="flex flex-col">
               <span className="font-display text-[26px] font-semibold leading-tight">{option.label}</span>
               <span className={cx("text-sm font-bold", closed ? "text-muted" : "text-sage-ink")}>
-                {closed ? "Called this round" : "Open for a call"}
+                {closed
+                  ? "Called this round"
+                  : option.settlesInSeconds === null
+                    ? "Open for a call"
+                    : `Settles in ${formatWait(option.settlesInSeconds)}`}
               </span>
             </div>
           </div>
@@ -190,17 +194,17 @@ export function CallScreen() {
         <h1 className="on-world m-0 text-center font-display text-[clamp(28px,3vw,40px)] font-semibold tracking-tight">
           Which way this round?
         </h1>
-        {view.roundSettlesInSeconds !== null ? (
-          <Pill className="h-10">
-            <span className="text-muted"><ClockIcon size={18} /></span>
-            <span className="font-bold text-muted">This round settles in</span>
-            <span className="tnum">{formatWait(view.roundSettlesInSeconds)}</span>
-          </Pill>
-        ) : (
+        {/*
+          Each asset rides its own round, and the two do not expire together.
+          A single "this round settles in" spoke for both and so was wrong for
+          at least one of them — it could read "under a minute" beside a call
+          that had four left. The clock belongs on the sign it applies to.
+        */}
+        {view.roundSettlesInSeconds === null ? (
           <Pill className="h-10">
             <span className="font-bold text-muted">No round open right now</span>
           </Pill>
-        )}
+        ) : null}
         <RoundLengthPicker />
 
         <div className="mt-1 flex w-full flex-wrap justify-center gap-[clamp(24px,8vw,140px)]">
