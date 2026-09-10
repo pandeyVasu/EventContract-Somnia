@@ -1,6 +1,6 @@
 # Harvest Call
 
-**Play it: <https://somnia-hackathon-j8pn2fmrt-pandeyvasus-projects.vercel.app>**
+**Play it: <https://harvest-call.vercel.app>**
 (Somnia Shannon testnet — you will need a browser wallet and free test funds;
 see [Wallet and test funds](#wallet-and-test-funds).)
 
