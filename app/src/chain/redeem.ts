@@ -8,12 +8,36 @@ import type { Exchange, PlacedCall, Settlement } from "./types.ts";
 import { outcomeIdxFor } from "./place.ts";
 import { hashOf, receiptSucceeded } from "./receipt.ts";
 
+/**
+ * Why a redemption claimed nothing, and whether it is worth trying again.
+ *
+ * `lost` and `no-position` are settled facts: there was never anything to
+ * claim, or it has already been claimed. `reverted` means the chain rejected
+ * the transaction. `failed` means we never got an answer — an RPC that timed
+ * out, a wallet that refused to sign — and is the only one where the money may
+ * still be sitting there waiting.
+ */
+export type RedemptionSkip = "lost" | "no-position" | "reverted" | "failed";
+
 export interface Redemption {
   marketId: `0x${string}`;
   redeemed: bigint;
   txHash: string | null;
   /** Why nothing was claimed, when nothing was. */
-  skipped?: "lost" | "no-position" | "reverted";
+  skipped?: RedemptionSkip;
+  /** What went wrong, on `failed` only. Never shown to the player. */
+  error?: string;
+}
+
+/**
+ * Is this outcome final, or should the call be tried again later?
+ *
+ * Only a genuine failure to reach the chain is worth retrying. Treating a lost
+ * call or an already-claimed position as retryable would queue a transaction
+ * that can never succeed, forever.
+ */
+export function isTerminal(r: Redemption): boolean {
+  return r.skipped !== "failed";
 }
 
 /**
@@ -56,11 +80,14 @@ export async function redeemSettled(
 ): Promise<Redemption[]> {
   const out: Redemption[] = [];
   for (const { call, settlement } of pairs) {
+    // A thrown error is not the same as having nothing to claim. Reporting it
+    // as "no-position" once made an unreachable RPC look like a settled fact,
+    // and the winnings were never asked for again.
     out.push(await redeemCall(ex, call, settlement).catch((e) => ({
       marketId: call.marketId,
       redeemed: 0n,
       txHash: null,
-      skipped: "no-position" as const,
+      skipped: "failed" as const,
       error: String(e),
     })));
   }

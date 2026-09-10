@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 
 import { LOCKED_RULES, initialState, reduce, type Event, type GameState } from "farm-engine";
 import { currentWindowId } from "../src/chain/clock.ts";
-import { openMarketIds, redeemablePairs, settlementEvents, tickEvent } from "../src/game/loop.ts";
+import { openMarketIds, pendingPairs, redeemablePairs, settlementEvents, tickEvent } from "../src/game/loop.ts";
+import { MAX_ATTEMPTS, due, enqueue, recordFailure, remove } from "../src/game/redeemQueue.ts";
+import { isTerminal } from "../src/chain/redeem.ts";
 import { buildView, formatCoins, formatCoinsWithUnit, formatCountdown, formatWait, formatWindows, isNearlyDecided } from "../src/game/view.ts";
 import type { LiveWindow, Settlement } from "../src/chain/types.ts";
 
@@ -398,4 +400,73 @@ test("the warning reaches the asset the player is about to call", () => {
   assert.deepEqual(eth.nearlyDecided, { up: false, down: false });
   const unquoted = view(state, windows).assets.find((a) => a.asset === "BTC")!;
   assert.deepEqual(unquoted.nearlyDecided, { up: false, down: false });
+});
+
+// --- winnings that did not come back the first time -------------------------
+
+test("only a failure to reach the chain is worth retrying", () => {
+  const base = { marketId: BTC_MARKET, redeemed: 0n, txHash: null };
+  // Settled facts: there is nothing to claim and there never will be.
+  assert.equal(isTerminal({ ...base, skipped: "lost" }), true);
+  assert.equal(isTerminal({ ...base, skipped: "no-position" }), true);
+  assert.equal(isTerminal({ ...base, skipped: "reverted" }), true);
+  // A win that actually paid out.
+  assert.equal(isTerminal({ ...base, redeemed: 100n, txHash: "0xabc" }), true);
+  // The one case where the money may still be sitting there.
+  assert.equal(isTerminal({ ...base, skipped: "failed", error: "timeout" }), false);
+});
+
+test("the redemption queue keeps a market until the chain answers", () => {
+  let q = enqueue([], [BTC_MARKET, ETH_MARKET]);
+  assert.deepEqual(due(q), [BTC_MARKET, ETH_MARKET]);
+
+  // Queueing the same market twice must not double it, nor reset its attempts.
+  q = recordFailure(q, BTC_MARKET, "rpc down");
+  q = enqueue(q, [BTC_MARKET]);
+  assert.equal(q.length, 2);
+  assert.equal(q.find((e) => e.marketId === BTC_MARKET)!.attempts, 1);
+
+  // A final answer takes it off for good.
+  q = remove(q, [ETH_MARKET]);
+  assert.deepEqual(due(q), [BTC_MARKET]);
+});
+
+test("a redemption that keeps failing is eventually left alone", () => {
+  // Otherwise a doomed claim is re-sent every poll for the life of the tab.
+  let q = enqueue([], [BTC_MARKET]);
+  for (let i = 0; i < MAX_ATTEMPTS - 1; i += 1) q = recordFailure(q, BTC_MARKET, "still down");
+  assert.deepEqual(due(q), [BTC_MARKET], "still trying just below the limit");
+
+  q = recordFailure(q, BTC_MARKET, "still down");
+  assert.deepEqual(q, [], "and dropped at it");
+});
+
+test("a queued redemption is rebuilt from the event log, so it survives a reload", () => {
+  // Nothing about the call is stored beside the market id. After a reload the
+  // direction and entry price come back from the log, which is the only copy.
+  const state = stateWith([
+    placed(BTC_MARKET, "BTC", "up", 0.4),
+    { type: "CALL_SETTLED", marketId: BTC_MARKET, result: "up", settledAtWindow: 1_000_001 } as Event,
+  ]);
+
+  const pairs = pendingPairs(state, ME, [BTC_MARKET]);
+  assert.equal(pairs.length, 1);
+  assert.equal(pairs[0]!.call.direction, "up");
+  assert.equal(pairs[0]!.call.entryPrice, 0.4);
+  assert.equal(pairs[0]!.settlement.result, "up");
+  assert.equal(pairs[0]!.settlement.winningOutcome, 0, "Up is outcome 0");
+
+  // A market the player has no settled call on rebuilds to nothing.
+  assert.deepEqual(pendingPairs(state, ME, [ETH_MARKET]), []);
+  assert.deepEqual(pendingPairs(state, ME, []), []);
+});
+
+test("a voided round rebuilds with no winning side", () => {
+  const state = stateWith([
+    placed(ETH_MARKET, "ETH", "down", 0.5),
+    { type: "CALL_SETTLED", marketId: ETH_MARKET, result: "void", settledAtWindow: 1_000_001 } as Event,
+  ]);
+  const pairs = pendingPairs(state, ME, [ETH_MARKET]);
+  assert.equal(pairs[0]!.settlement.winningOutcome, null);
+  assert.equal(pairs[0]!.settlement.result, "void");
 });

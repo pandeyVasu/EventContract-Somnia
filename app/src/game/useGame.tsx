@@ -11,13 +11,14 @@ import { useAccount, useConnect, useDisconnect, useSwitchChain, useWalletClient 
 import { currentWindowId } from "../chain/clock.ts";
 import { getExchange, releaseExchange } from "../chain/exchange.ts";
 import { placeCall } from "../chain/place.ts";
-import { redeemSettled } from "../chain/redeem.ts";
+import { isTerminal, redeemSettled } from "../chain/redeem.ts";
 import { pollSettlements } from "../chain/settle.ts";
 import { quoteEntries } from "../chain/place.ts";
 import { listLiveWindows, pickWindow } from "../chain/windows.ts";
 import type { Direction, Exchange, LiveWindow, Settlement } from "../chain/types.ts";
 import { CHAIN } from "../chain/wagmi.ts";
-import { SETTLE_POLL_MS, TICK_MS, WINDOWS_POLL_MS, openMarketIds, redeemablePairs, settlementEvents, tickEvent } from "./loop.ts";
+import { SETTLE_POLL_MS, TICK_MS, WINDOWS_POLL_MS, openMarketIds, pendingPairs, redeemablePairs, settlementEvents, tickEvent } from "./loop.ts";
+import { due, enqueue, loadQueue, recordFailure, remove, saveQueue } from "./redeemQueue.ts";
 import { RULES, createStore, playerIdFor, type Store } from "./store.ts";
 import { buildView, type CallView, type GameView } from "./view.ts";
 
@@ -67,6 +68,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [windows, setWindows] = useState<LiveWindow[]>([]);
   const [settlementQueue, setSettlementQueue] = useState<string[]>([]);
   const [entries, setEntries] = useState<Record<string, { up: number | null; down: number | null }>>({});
+  /** A redemption round is in flight. Two at once would send the same claim twice. */
+  const redeeming = useRef(false);
   const [now, setNow] = useState(() => Date.now());
 
   // One store per wallet. Switching wallets switches games.
@@ -98,6 +101,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (!walletAddress) return;
     return () => releaseExchange(walletAddress);
   }, [walletAddress]);
+
+  /**
+   * Switching wallets switches games, so nothing from the last one may survive.
+   *
+   * The settlement queue held market ids, and it was not cleared. After a
+   * switch the overlay would look for a call the new player never made, find
+   * nothing, and render null — leaving a dead id at the head of the queue that
+   * blocked every real settlement behind it. The quoted entries and the
+   * in-flight redemption flag belong to the old wallet just as much.
+   */
+  useEffect(() => {
+    setSettlementQueue([]);
+    setEntries({});
+    redeeming.current = false;
+  }, [address]);
 
   // --- the clock -----------------------------------------------------------
   useEffect(() => {
@@ -154,7 +172,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [exchange]);
 
   // --- settlement, then redemption -----------------------------------------
-  const redeeming = useRef(false);
   useEffect(() => {
     if (!exchange || !store) return;
     let alive = true;
@@ -165,11 +182,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
       // A slow poll must not overlap the next one. The engine ignores a repeated
       // settlement, but a duplicate would still show the overlay twice.
       if (inFlight) return;
-      const open = openMarketIds(store.getState(), playerId);
-      if (!open.length) return;
       inFlight = true;
       try {
-        await runCheck(open);
+        const open = openMarketIds(store.getState(), playerId);
+        if (open.length) await runCheck(open);
+        // Runs whether or not anything settled this time round: the queue may
+        // be holding a redemption that failed on an earlier pass, or one left
+        // over from before the page was reloaded.
+        await runRedemptions();
       } finally {
         inFlight = false;
       }
@@ -193,15 +213,49 @@ export function GameProvider({ children }: { children: ReactNode }) {
       for (const ev of settlementEvents(settled, currentWindowId())) store.dispatch(ev);
       setSettlementQueue((q) => [...q, ...settled.map((s) => s.marketId)]);
 
-      // Claiming back collateral is housekeeping: it must never block the game
-      // or surface as an error to the player.
-      if (pairs.length && !redeeming.current) {
-        redeeming.current = true;
-        redeemSettled(exchange, pairs)
-          .catch((e) => console.warn("[farm] redemption failed:", e))
-          .finally(() => {
-            redeeming.current = false;
-          });
+      // Queue rather than claim. Whether the money actually came back is
+      // decided by runRedemptions, which can try again if it does not.
+      if (pairs.length && address) {
+        saveQueue(address, enqueue(loadQueue(address), pairs.map((p) => p.call.marketId)));
+      }
+    };
+
+    /**
+     * Ask the chain for everything still owed, and keep asking.
+     *
+     * Claiming back collateral is housekeeping: it must never block the game or
+     * surface as an error to the player. But it must not be given up on either,
+     * so only a final answer takes a market off the queue.
+     */
+    const runRedemptions = async () => {
+      if (!address || redeeming.current) return;
+      const queued = due(loadQueue(address));
+      if (!queued.length) return;
+
+      const pairs = pendingPairs(store.getState(), playerId, queued);
+      if (!pairs.length) {
+        // Queued but no longer in the log — nothing left to rebuild from.
+        saveQueue(address, remove(loadQueue(address), queued));
+        return;
+      }
+
+      redeeming.current = true;
+      try {
+        const results = await redeemSettled(exchange, pairs);
+        if (!alive) return;
+        let queue = loadQueue(address);
+        for (const r of results) {
+          if (isTerminal(r)) queue = remove(queue, [r.marketId]);
+          else {
+            console.warn(`[farm] redemption for ${r.marketId} did not go through, will retry:`, r.error);
+            queue = recordFailure(queue, r.marketId, r.error ?? "unknown");
+          }
+        }
+        saveQueue(address, queue);
+      } catch (e) {
+        console.warn("[farm] redemption round failed:", e);
+      } finally {
+        redeeming.current = false;
       }
     };
 
@@ -211,7 +265,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       alive = false;
       window.clearInterval(id);
     };
-  }, [exchange, store, playerId]);
+  }, [exchange, store, playerId, address]);
 
   // --- actions -------------------------------------------------------------
   const run = useCallback(async (key: string, fn: () => Promise<void>, failure: string) => {

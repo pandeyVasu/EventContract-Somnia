@@ -47,6 +47,53 @@ export function settlementEvents(settlements: Settlement[], settledAtWindow: num
 }
 
 /**
+ * Rebuild the calls behind a set of markets that still owe a redemption.
+ *
+ * A redemption that never went through has to be retried later, possibly after
+ * a reload, so something must remember it. That something stores market ids and
+ * nothing else: the call itself is already in the event log, and copying its
+ * direction and entry price into a second place is how the two drift apart.
+ * Everything needed to retry is rebuilt from the settled call here.
+ */
+export function pendingPairs(
+  state: GameState,
+  playerId: string,
+  marketIds: string[],
+): { call: PlacedCall; settlement: Settlement }[] {
+  if (!marketIds.length) return [];
+  const wanted = new Set(marketIds);
+  const p = state.players[playerId];
+  if (!p) return [];
+
+  const out: { call: PlacedCall; settlement: Settlement }[] = [];
+  for (const c of p.calls) {
+    if (!wanted.has(c.marketId) || c.result === null) continue;
+    // The winning side is what the result already says: the settlement was
+    // recorded when the call was decided.
+    const winningOutcome = c.result === "void" ? null : c.result === "up" ? 0 : 1;
+    out.push({
+      call: {
+        callId: c.id,
+        marketId: c.marketId as `0x${string}`,
+        asset: c.asset,
+        direction: c.direction as Direction,
+        entryPrice: c.entryPrice,
+        windowId: c.windowId,
+        shares: 0n, // redeeming reads the real position from chain
+        txHash: c.id,
+        marketExpiry: 0,
+      },
+      settlement: {
+        marketId: c.marketId as `0x${string}`,
+        result: c.result,
+        winningOutcome: winningOutcome as 0 | 1 | null,
+      },
+    });
+  }
+  return out;
+}
+
+/**
  * The calls worth sending a redemption for, paired with what happened.
  *
  * Redeeming returns the player's own collateral; it has nothing to do with the
