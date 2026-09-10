@@ -134,7 +134,11 @@ function hintFor(view: GameView): string {
  */
 function RoundLengthPicker() {
   const { view, actions } = useGame();
-  if (view.roundLengths.length < 2) return null;
+  // Shown whenever anything is open, even a single length. Hiding it below two
+  // choices meant the bar vanished when the venue was between rounds, which
+  // reads as the control having been taken away rather than as there being
+  // nothing to choose between.
+  if (!view.roundLengths.length) return null;
 
   const choose = (v: number | null) => () => actions.chooseRoundLength(v);
   const active = view.preferredRoundLength;
