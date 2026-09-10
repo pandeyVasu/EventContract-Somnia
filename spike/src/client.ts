@@ -4,6 +4,21 @@
 import { SomniaMarkets, SOMNIA_TESTNET_ADDRESSES } from "@somnia-chain/markets-sdk";
 import { somniaTestnet } from "viem/chains";
 
+/**
+ * Network endpoints, as configuration rather than constants.
+ *
+ * Both defaults are the public Shannon testnet endpoints published in the
+ * markets-sdk README and pre-filled by the dreamDEX Event Contracts starter
+ * template. The SDK requires an indexer URL at construction even though every
+ * read and write in these scripts is on chain.
+ *
+ * `WS_RPC_URL` and `INDEXER_URL` in the env file override them, so pointing at
+ * a different network or a self-hosted indexer needs no code change. The names
+ * match the starter template's so an existing .env works unchanged.
+ */
+export const DEFAULT_WS_RPC_URL = "wss://api.infra.testnet.somnia.network/ws";
+export const DEFAULT_INDEXER_URL = "https://dev.smk.somnia.host/v1/graphql";
+
 /** Collateral is TestUSDC, 6 decimals. One whole unit in raw units. */
 export const ONE_COLLATERAL = 1_000_000n;
 
@@ -22,8 +37,8 @@ export function makeExchange() {
     chain: somniaTestnet,
     addresses: SOMNIA_TESTNET_ADDRESSES,
     privateKey,
-    wsRpcUrl: process.env.WS_RPC_URL ?? "wss://api.infra.testnet.somnia.network/ws",
-    indexerUrl: process.env.INDEXER_URL ?? "https://dev.smk.somnia.host/v1/graphql",
+    wsRpcUrl: process.env.WS_RPC_URL ?? DEFAULT_WS_RPC_URL,
+    indexerUrl: process.env.INDEXER_URL ?? DEFAULT_INDEXER_URL,
   });
 }
 

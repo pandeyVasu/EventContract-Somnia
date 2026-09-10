@@ -2,6 +2,8 @@ node_modules/
 dist/
 .env
 .env.*
+# ...but the template of it is documentation, and is meant to be published.
+!.env.example
 
 # Local-only: planning notes, reference material, agent config. Never published.
 context/

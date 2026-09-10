@@ -119,6 +119,23 @@ npm run build -w app
 npm run sim -w engine     # season simulation + calibration gate
 ```
 
+### Configuration
+
+Nothing needs configuring to run against Shannon testnet — the defaults are the
+public endpoints published in the `@somnia-chain/markets-sdk` README and
+pre-filled by the dreamDEX Event Contracts starter template. `.env.example`
+documents every value.
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `PRIVATE_KEY` | `spike/` only | Signs the headless scripts. The app never sees a key — it signs through the player's wallet. |
+| `RPC_URL`, `WS_RPC_URL` | `spike/` | Somnia Shannon endpoints. |
+| `INDEXER_URL` | `spike/` | GraphQL indexer. The SDK requires one at construction even though every read and write here is on chain. |
+| `VITE_WS_RPC_URL`, `VITE_INDEXER_URL` | `app/` | The same two for the browser build. Vite only exposes names beginning with `VITE_`, and reads them at build time. |
+
+Set the endpoint variables only to point at another network or your own indexer;
+leaving them unset uses the public testnet defaults.
+
 ### Wallet and test funds
 
 The game runs on **Somnia Shannon testnet**. Nothing here is real money.
@@ -196,7 +213,6 @@ not.
   data directly rather than from a local record of it.
 - **Two tabs on the same wallet can overwrite each other's history.** There is no
   cross-tab synchronisation yet.
-- **The indexer endpoint is a hardcoded default.** It should be configuration.
 - **Order-book depth on testnet is thin** — a handful of levels. The fixed
   1 tUSDC stake fills reliably today, but the app handles an unfillable quote by
   declining the call rather than pretending.
