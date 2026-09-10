@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { LOCKED_RULES, initialState, reduce, type Event, type GameState } from "farm-engine";
 import { currentWindowId } from "../src/chain/clock.ts";
 import { openMarketIds, pendingPairs, redeemablePairs, settlementEvents, tickEvent } from "../src/game/loop.ts";
-import { MAX_ATTEMPTS, due, enqueue, recordFailure, remove } from "../src/game/redeemQueue.ts";
-import { isTerminal } from "../src/chain/redeem.ts";
+import { MAX_ATTEMPTS, MAX_REVERTS, due, enqueue, exhausted, recordFailure, remove } from "../src/game/redeemQueue.ts";
+import { failureKind, isTerminal } from "../src/chain/redeem.ts";
 import { buildView, formatCoins, formatCoinsWithUnit, formatCountdown, formatWait, formatWindows, isNearlyDecided } from "../src/game/view.ts";
 import type { LiveWindow, Settlement } from "../src/chain/types.ts";
 
@@ -404,16 +404,45 @@ test("the warning reaches the asset the player is about to call", () => {
 
 // --- winnings that did not come back the first time -------------------------
 
-test("only a failure to reach the chain is worth retrying", () => {
+test("an outcome is final only when there is provably nothing left to claim", () => {
   const base = { marketId: BTC_MARKET, redeemed: 0n, txHash: null };
   // Settled facts: there is nothing to claim and there never will be.
   assert.equal(isTerminal({ ...base, skipped: "lost" }), true);
   assert.equal(isTerminal({ ...base, skipped: "no-position" }), true);
-  assert.equal(isTerminal({ ...base, skipped: "reverted" }), true);
   // A win that actually paid out.
   assert.equal(isTerminal({ ...base, redeemed: 100n, txHash: "0xabc" }), true);
-  // The one case where the money may still be sitting there.
+
+  // Neither of these proves the money is gone, so neither ends the matter.
   assert.equal(isTerminal({ ...base, skipped: "failed", error: "timeout" }), false);
+  assert.equal(
+    isTerminal({ ...base, skipped: "reverted", txHash: "0xdead" }),
+    false,
+    "a revert can be a momentary race, and treating it as final stranded the funds",
+  );
+
+  // The queue counts the two apart, because only one of them costs gas.
+  assert.equal(failureKind({ ...base, skipped: "failed" }), "failed");
+  assert.equal(failureKind({ ...base, skipped: "reverted" }), "reverted");
+});
+
+test("a reverting redemption is retried far fewer times than an unreachable one", () => {
+  // A revert burns gas, so it gets two goes; a request that never landed costs
+  // nothing but the asking. Retrying a revert is safe because redeemCall reads
+  // the position first — a genuinely claimed one comes back as no-position.
+  assert.ok(MAX_REVERTS < MAX_ATTEMPTS);
+
+  let q = enqueue([], [BTC_MARKET]);
+  for (let i = 0; i < MAX_REVERTS; i += 1) q = recordFailure(q, BTC_MARKET, "reverted", "execution reverted");
+  assert.deepEqual(due(q), [], "set aside after the revert budget");
+  assert.deepEqual(exhausted(q), [BTC_MARKET]);
+
+  // The two counters are independent: reverts must not consume the plain
+  // attempt budget, nor the other way round.
+  let mixed = enqueue([], [ETH_MARKET]);
+  mixed = recordFailure(mixed, ETH_MARKET, "failed", "timeout");
+  assert.deepEqual(due(mixed), [ETH_MARKET], "one unreachable attempt is nowhere near the limit");
+  assert.equal(mixed[0]!.reverts, 0);
+  assert.equal(mixed[0]!.attempts, 1);
 });
 
 test("the redemption queue keeps a market until the chain answers", () => {
@@ -421,7 +450,7 @@ test("the redemption queue keeps a market until the chain answers", () => {
   assert.deepEqual(due(q), [BTC_MARKET, ETH_MARKET]);
 
   // Queueing the same market twice must not double it, nor reset its attempts.
-  q = recordFailure(q, BTC_MARKET, "rpc down");
+  q = recordFailure(q, BTC_MARKET, "failed", "rpc down");
   q = enqueue(q, [BTC_MARKET]);
   assert.equal(q.length, 2);
   assert.equal(q.find((e) => e.marketId === BTC_MARKET)!.attempts, 1);
@@ -434,11 +463,12 @@ test("the redemption queue keeps a market until the chain answers", () => {
 test("a redemption that keeps failing is eventually left alone", () => {
   // Otherwise a doomed claim is re-sent every poll for the life of the tab.
   let q = enqueue([], [BTC_MARKET]);
-  for (let i = 0; i < MAX_ATTEMPTS - 1; i += 1) q = recordFailure(q, BTC_MARKET, "still down");
+  for (let i = 0; i < MAX_ATTEMPTS - 1; i += 1) q = recordFailure(q, BTC_MARKET, "failed", "still down");
   assert.deepEqual(due(q), [BTC_MARKET], "still trying just below the limit");
 
-  q = recordFailure(q, BTC_MARKET, "still down");
-  assert.deepEqual(q, [], "and dropped at it");
+  q = recordFailure(q, BTC_MARKET, "failed", "still down");
+  assert.deepEqual(due(q), [], "and set aside at it");
+  assert.deepEqual(exhausted(q), [BTC_MARKET], "kept, not deleted, so a reload can try again");
 });
 
 test("a queued redemption is rebuilt from the event log, so it survives a reload", () => {

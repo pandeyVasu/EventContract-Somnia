@@ -11,14 +11,14 @@ import { useAccount, useConnect, useDisconnect, useSwitchChain, useWalletClient 
 import { currentWindowId } from "../chain/clock.ts";
 import { getExchange, releaseExchange } from "../chain/exchange.ts";
 import { placeCall } from "../chain/place.ts";
-import { isTerminal, redeemSettled } from "../chain/redeem.ts";
+import { failureKind, isTerminal, redeemSettled } from "../chain/redeem.ts";
 import { pollSettlements } from "../chain/settle.ts";
 import { quoteEntries } from "../chain/place.ts";
 import { listLiveWindows, pickWindow } from "../chain/windows.ts";
 import type { Direction, Exchange, LiveWindow, Settlement } from "../chain/types.ts";
 import { CHAIN } from "../chain/wagmi.ts";
 import { SETTLE_POLL_MS, TICK_MS, WINDOWS_POLL_MS, openMarketIds, pendingPairs, redeemablePairs, settlementEvents, tickEvent } from "./loop.ts";
-import { due, enqueue, loadQueue, recordFailure, remove, saveQueue } from "./redeemQueue.ts";
+import { due, enqueue, exhausted, loadQueue, readQueue, recordFailure, remove, saveQueue } from "./redeemQueue.ts";
 import { RULES, createStore, playerIdFor, type Store } from "./store.ts";
 import { buildView, type CallView, type GameView } from "./view.ts";
 
@@ -115,6 +115,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setSettlementQueue([]);
     setEntries({});
     redeeming.current = false;
+    // A fresh session gets fresh attempts. Anything the last one gave up on —
+    // usually a network that was briefly unreachable — is asked for again.
+    if (address) saveQueue(address, loadQueue(address));
   }, [address]);
 
   // --- the clock -----------------------------------------------------------
@@ -216,7 +219,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       // Queue rather than claim. Whether the money actually came back is
       // decided by runRedemptions, which can try again if it does not.
       if (pairs.length && address) {
-        saveQueue(address, enqueue(loadQueue(address), pairs.map((p) => p.call.marketId)));
+        saveQueue(address, enqueue(readQueue(address), pairs.map((p) => p.call.marketId)));
       }
     };
 
@@ -229,13 +232,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
      */
     const runRedemptions = async () => {
       if (!address || redeeming.current) return;
-      const queued = due(loadQueue(address));
+      const queued = due(readQueue(address));
       if (!queued.length) return;
 
       const pairs = pendingPairs(store.getState(), playerId, queued);
       if (!pairs.length) {
         // Queued but no longer in the log — nothing left to rebuild from.
-        saveQueue(address, remove(loadQueue(address), queued));
+        saveQueue(address, remove(readQueue(address), queued));
         return;
       }
 
@@ -243,15 +246,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
       try {
         const results = await redeemSettled(exchange, pairs);
         if (!alive) return;
-        let queue = loadQueue(address);
+        let queue = readQueue(address);
+        const before = exhausted(queue).length;
         for (const r of results) {
           if (isTerminal(r)) queue = remove(queue, [r.marketId]);
           else {
             console.warn(`[farm] redemption for ${r.marketId} did not go through, will retry:`, r.error);
-            queue = recordFailure(queue, r.marketId, r.error ?? "unknown");
+            queue = recordFailure(queue, r.marketId, failureKind(r), r.error ?? "unknown");
           }
         }
         saveQueue(address, queue);
+
+        // Giving up quietly is how money goes missing without anyone noticing.
+        // The player cannot act on it beyond coming back later, which is
+        // exactly what the sentence asks of them, and the next session picks
+        // the queue up again from the top.
+        if (exhausted(queue).length > before) {
+          setMessage("Some winnings could not be collected just now. They are safe on chain, and the game will try again next time you open it.");
+        }
       } catch (e) {
         console.warn("[farm] redemption round failed:", e);
       } finally {

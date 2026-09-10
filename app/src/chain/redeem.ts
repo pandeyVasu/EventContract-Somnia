@@ -32,12 +32,27 @@ export interface Redemption {
 /**
  * Is this outcome final, or should the call be tried again later?
  *
- * Only a genuine failure to reach the chain is worth retrying. Treating a lost
- * call or an already-claimed position as retryable would queue a transaction
- * that can never succeed, forever.
+ * `lost` and `no-position` are settled facts and end the matter. The other two
+ * do not.
+ *
+ * A `failed` attempt never reached the chain, so the money may still be there.
+ *
+ * A `reverted` one did reach it, and treating that as final was wrong: a revert
+ * caused by a momentary race or a simulation against a stale block is
+ * indistinguishable here from one caused by an already-claimed position, and
+ * calling both final stranded the first kind permanently. Retrying is safe
+ * because it is self-correcting — a redemption reads the on-chain position
+ * before it sends, so a genuinely claimed position comes back as `no-position`
+ * on the next pass and ends there without spending gas. The queue caps reverts
+ * far lower than plain failures, since each one does burn gas.
  */
 export function isTerminal(r: Redemption): boolean {
-  return r.skipped !== "failed";
+  return r.skipped !== "failed" && r.skipped !== "reverted";
+}
+
+/** Which kind of non-final outcome this was, for the queue's separate counters. */
+export function failureKind(r: Redemption): "failed" | "reverted" {
+  return r.skipped === "reverted" ? "reverted" : "failed";
 }
 
 /**
