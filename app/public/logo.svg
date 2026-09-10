@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480">
+  <rect width="480" height="480" fill="#b8552f"/>
+  <g transform="translate(126 46) scale(3.55)" fill="none" stroke="#fff7ee" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 52V22"/>
+    <path d="M32 22c-8 0-13.2-5.2-13.2-13.2C26.8 8.8 32 14 32 22z"/>
+    <path d="M32 22c8 0 13.2-5.2 13.2-13.2C37.2 8.8 32 14 32 22z"/>
+    <path d="M32 36c-8 0-13.2-5.2-13.2-13.2C26.8 22.8 32 28 32 36z"/>
+    <path d="M32 36c8 0 13.2-5.2 13.2-13.2C37.2 22.8 32 28 32 36z"/>
+  </g>
+  <text x="240" y="366" text-anchor="middle" fill="#fff7ee" font-family="Fredoka, Nunito, 'Segoe UI', system-ui, sans-serif" font-size="52" font-weight="600" letter-spacing="-1">Harvest Call</text>
+  <text x="240" y="400" text-anchor="middle" fill="#f2cf7a" font-family="Nunito, 'Segoe UI', system-ui, sans-serif" font-size="15" font-weight="800" letter-spacing="2.1">CALL THE WEATHER</text>
+</svg>
