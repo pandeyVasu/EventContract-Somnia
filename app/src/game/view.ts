@@ -9,6 +9,7 @@ import {
 } from "farm-engine";
 import { GAME_WINDOW_SECONDS, secondsLeftInWindow } from "../chain/clock.ts";
 import type { Direction, LiveWindow } from "../chain/types.ts";
+import { availableIntervals } from "../chain/windows.ts";
 
 /** Coins within a day of expiry get a gentle warning. A day's length is a rule. */
 const expiryWarningWindows = (rules: Rules): number => rules.windowsPerDay;
@@ -107,6 +108,10 @@ export interface GameView {
   roundSettlesInSeconds: number | null;
   windowId: number;
   coinsExpiringSoon: number;
+  /** Round lengths open right now, shortest first. Empty when nothing is open. */
+  roundLengths: number[];
+  /** The length the player has asked for, or null to always take the soonest. */
+  preferredRoundLength: number | null;
   assets: AssetOption[];
   openCalls: CallView[];
   finishedCalls: CallView[];
@@ -161,6 +166,19 @@ export function formatCoins(amount: number): string {
 /** "1 Coin" / "2 Coins" / "0.1 Coins", with the number formatted honestly. */
 export function formatCoinsWithUnit(amount: number): string {
   return `${formatCoins(amount)} ${amount === 1 ? "Coin" : "Coins"}`;
+}
+
+/**
+ * A round length as a pace, not a duration: "1 min", "5 min", "15 min".
+ *
+ * The player is choosing how soon they find out whether they were right. That
+ * is a legible thing to want, and it is the only property of the underlying
+ * round the game ever names — never a price, a book, or an order.
+ */
+export function formatRoundLength(intervalSec: number): string {
+  if (intervalSec < 3600) return `${Math.round(intervalSec / 60)} min`;
+  const hours = Math.round(intervalSec / 3600);
+  return hours === 24 ? "1 day" : `${hours}h`;
 }
 
 /** Whole minutes of build time one unit of Time is worth. */
@@ -343,9 +361,11 @@ export interface ViewInput {
   now: number;
   /** What each open round would enter at, by marketId. Absent until first quoted. */
   entries?: Record<string, { up: number | null; down: number | null }>;
+  /** The round length the player picked, or null for whatever settles soonest. */
+  preferredRoundLength?: number | null;
 }
 
-export function buildView({ rules, state, playerId, address, windows, now, entries }: ViewInput): GameView {
+export function buildView({ rules, state, playerId, address, windows, now, entries, preferredRoundLength = null }: ViewInput): GameView {
   const p = state.players[playerId];
   const windowId = state.windowId;
 
@@ -361,6 +381,8 @@ export function buildView({ rules, state, playerId, address, windows, now, entri
       roundSettlesInSeconds: null,
       windowId,
       coinsExpiringSoon: 0,
+      roundLengths: availableIntervals(windows),
+      preferredRoundLength,
       assets: [],
       openCalls: [],
       finishedCalls: [],
@@ -401,6 +423,8 @@ export function buildView({ rules, state, playerId, address, windows, now, entri
       : null,
     windowId,
     coinsExpiringSoon,
+    roundLengths: availableIntervals(windows),
+    preferredRoundLength,
     assets: assetOptions(rules, p, windows, callsLeftToday, now, entries),
     openCalls: calls.filter((c) => c.outcome === "open").reverse(),
     finishedCalls: calls.filter((c) => c.outcome !== "open").reverse(),

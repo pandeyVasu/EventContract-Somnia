@@ -2,7 +2,7 @@
 
 import { Chunky, Note, Panel, Pill, AssetBadge, cx } from "../kit.tsx";
 import { ClockIcon, CoinIcon, DownIcon, UpIcon } from "../icons.tsx";
-import { formatWait } from "../../game/view.ts";
+import { formatRoundLength, formatWait } from "../../game/view.ts";
 import type { AssetOption, CallView, GameView } from "../../game/view.ts";
 import { useGame } from "../../game/useGame.tsx";
 import type { Direction } from "../../chain/types.ts";
@@ -119,6 +119,56 @@ function hintFor(view: GameView): string {
   return "Up pays Coins for upgrades. Down pays Time to finish them sooner.";
 }
 
+/**
+ * How soon the player wants to find out.
+ *
+ * The only property of the underlying round the game ever names, and it is
+ * named as a pace rather than as a market: "how soon do you want to know",
+ * never a length of contract. It offers exactly the lengths that are open right
+ * now, because what the venue runs changes through the day, and it hides itself
+ * entirely when there is no choice to make.
+ */
+function RoundLengthPicker() {
+  const { view, actions } = useGame();
+  if (view.roundLengths.length < 2) return null;
+
+  const choose = (v: number | null) => () => actions.chooseRoundLength(v);
+  const active = view.preferredRoundLength;
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="hidden text-[13px] font-extrabold text-muted sm:inline">How soon do you want to know?</span>
+      <div className="flex items-center gap-1 rounded-full border-[3px] border-bark bg-sand p-1">
+        <button
+          type="button"
+          onClick={choose(null)}
+          aria-pressed={active === null}
+          className={cx(
+            "h-8 rounded-full px-3 text-[13px] font-extrabold transition-colors",
+            active === null ? "bg-terracotta text-cream" : "text-muted hover:text-ink",
+          )}
+        >
+          Soonest
+        </button>
+        {view.roundLengths.map((seconds) => (
+          <button
+            key={seconds}
+            type="button"
+            onClick={choose(seconds)}
+            aria-pressed={active === seconds}
+            className={cx(
+              "h-8 rounded-full px-3 text-[13px] font-extrabold tnum transition-colors",
+              active === seconds ? "bg-terracotta text-cream" : "text-muted hover:text-ink",
+            )}
+          >
+            {formatRoundLength(seconds)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function CallScreen() {
   const { view } = useGame();
   const hint = hintFor(view);
@@ -140,6 +190,7 @@ export function CallScreen() {
             <span className="font-bold text-muted">No round open right now</span>
           </Pill>
         )}
+        <RoundLengthPicker />
       </div>
 
       <div className="absolute inset-x-0 top-[250px] z-10 flex justify-center gap-[clamp(24px,8vw,140px)] px-8">

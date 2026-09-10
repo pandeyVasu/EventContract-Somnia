@@ -28,6 +28,8 @@ export interface GameActions {
   disconnect(): void;
   getTestFunds(): Promise<void>;
   placeCall(asset: string, direction: Direction): Promise<void>;
+  /** Choose how soon a call should settle. Null takes the soonest open round. */
+  chooseRoundLength(intervalSec: number | null): void;
   startUpgrade(farmId: string): Promise<void>;
   buyEquipment(farmId: string, item: EquipmentId): Promise<void>;
 }
@@ -71,6 +73,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<Record<string, { up: number | null; down: number | null }>>({});
   /** A redemption round is in flight. Two at once would send the same claim twice. */
   const redeeming = useRef(false);
+  /**
+   * How soon the player wants to find out. Null means "whatever settles
+   * soonest", which is what a first-time player gets and what the demo wants.
+   */
+  const [preferredRoundLength, setPreferredRoundLength] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   // One store per wallet. Switching wallets switches games.
@@ -337,10 +344,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }, "The faucet did not answer. Try again in a moment.");
     },
 
+    chooseRoundLength(intervalSec: number | null) {
+      setPreferredRoundLength(intervalSec);
+    },
+
     async placeCall(asset: string, direction: Direction) {
       await run(`call:${asset}:${direction}`, async () => {
         if (!exchange || !store) throw new Error("not connected");
-        const window = pickWindow(windows, asset);
+        const window = pickWindow(windows, asset, preferredRoundLength);
         if (!window) throw new Error("no open window");
         const placed = await placeCall(exchange, window, direction);
         if (!placed) {
@@ -376,12 +387,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (violation) setMessage("You cannot buy that yet.");
       }, "Could not buy that.");
     },
-  }), [run, connectWallet, disconnect, exchange, store, windows, playerId]);
+  }), [run, connectWallet, disconnect, exchange, store, windows, playerId, preferredRoundLength]);
 
   // --- what the screens see ------------------------------------------------
   const view = useMemo(
-    () => buildView({ rules: RULES, state, playerId, address: address ?? null, windows, now, entries }),
-    [state, playerId, address, windows, now, entries],
+    () => buildView({ rules: RULES, state, playerId, address: address ?? null, windows, now, entries, preferredRoundLength }),
+    [state, playerId, address, windows, now, entries, preferredRoundLength],
   );
 
   // The overlay shows one finished call at a time, oldest first.

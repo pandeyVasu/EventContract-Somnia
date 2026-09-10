@@ -81,8 +81,30 @@ export async function listLiveWindows(
  * Returns null when that asset has nothing open, which the UI shows as a plain
  * reason rather than an error.
  */
-export function pickWindow(windows: LiveWindow[], asset: string): LiveWindow | null {
-  return windows.find((w) => w.asset === asset) ?? null;
+export function pickWindow(
+  windows: LiveWindow[],
+  asset: string,
+  preferredInterval: number | null = null,
+): LiveWindow | null {
+  const forAsset = windows.filter((w) => w.asset === asset);
+  if (preferredInterval !== null) {
+    // The player asked how soon they want to know. Honour it when that length is
+    // open for this asset, and fall back rather than refuse the call: round
+    // lengths come and go, and "no" would be a worse answer than "sooner".
+    const wanted = forAsset.find((w) => w.intervalSec === preferredInterval);
+    if (wanted) return wanted;
+  }
+  return forAsset[0] ?? null;
+}
+
+/**
+ * The round lengths open right now, shortest first.
+ *
+ * What the venue is running changes through the day, so this is discovered
+ * rather than declared: the game offers exactly the choices that exist.
+ */
+export function availableIntervals(windows: LiveWindow[]): number[] {
+  return [...new Set(windows.map((w) => w.intervalSec))].sort((a, b) => a - b);
 }
 
 /** The assets a player can call on right now. */

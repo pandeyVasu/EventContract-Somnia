@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { LOCKED_RULES, dayOf } from "farm-engine";
 import { GAME_WINDOW_SECONDS, currentWindowId, secondsLeftInWindow, windowIdAt } from "../src/chain/clock.ts";
-import { listLiveWindows, minSecondsLeft, pickWindow, tradeableAssets } from "../src/chain/windows.ts";
+import { availableIntervals, listLiveWindows, minSecondsLeft, pickWindow, tradeableAssets } from "../src/chain/windows.ts";
 import { pickConnector } from "../src/chain/wagmi.ts";
 import { ONE_COLLATERAL, entryPriceFrom, outcomeIdxFor, placeCall, sideFor } from "../src/chain/place.ts";
 import { pollSettlements, readSettlement } from "../src/chain/settle.ts";
@@ -364,4 +364,40 @@ test("a browser with several wallets connects to MetaMask, not whichever is firs
   // One wallet, or only the shim, still works.
   assert.equal(pickConnector([generic])!.id, "injected");
   assert.equal(pickConnector([]), undefined, "and nothing is not a crash");
+});
+
+// --- choosing how soon to find out ------------------------------------------
+
+test("a chosen round length is honoured, and falls back rather than refusing", () => {
+  const w = (asset: string, intervalSec: number, secondsLeft: number): LiveWindow => ({
+    marketId: `0x${asset}${intervalSec}` as `0x${string}`,
+    pool: POOL, asset, intervalSec,
+    expiry: 1_700_000_000 + secondsLeft, secondsLeft,
+  });
+
+  // Shortest first is how discovery hands them over.
+  const windows = [w("BTC", 60, 40), w("BTC", 300, 200), w("ETH", 300, 200), w("BTC", 900, 800)];
+
+  // No preference: take the soonest, which is what a first-time player gets.
+  assert.equal(pickWindow(windows, "BTC")!.intervalSec, 60);
+
+  // A preference that exists is honoured.
+  assert.equal(pickWindow(windows, "BTC", 900)!.intervalSec, 900);
+  assert.equal(pickWindow(windows, "BTC", 300)!.intervalSec, 300);
+
+  // A preference that does not exist for THIS asset falls back to its soonest,
+  // rather than refusing a call the player can plainly see is available.
+  assert.equal(pickWindow(windows, "ETH", 60)!.intervalSec, 300);
+
+  // An asset with nothing open is still nothing.
+  assert.equal(pickWindow(windows, "SOL", 60), null);
+});
+
+test("the game offers only the round lengths that are actually open", () => {
+  const w = (asset: string, intervalSec: number): LiveWindow => ({
+    marketId: `0x${asset}${intervalSec}` as `0x${string}`,
+    pool: POOL, asset, intervalSec, expiry: 1_700_000_100, secondsLeft: 100,
+  });
+  assert.deepEqual(availableIntervals([w("BTC", 900), w("BTC", 60), w("ETH", 900)]), [60, 900]);
+  assert.deepEqual(availableIntervals([]), [], "nothing open offers no choice");
 });
