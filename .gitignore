@@ -21,3 +21,6 @@ credentials*
 spike/market.json
 spike/placed.json
 spike/combo.json
+
+# Local review notes, kept out of the published repo like the other working docs.
+Harvest-Call-Audit-Report.md
