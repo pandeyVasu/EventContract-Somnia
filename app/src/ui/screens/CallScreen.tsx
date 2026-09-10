@@ -136,9 +136,11 @@ function RoundLengthPicker() {
   const active = view.preferredRoundLength;
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="hidden text-[13px] font-extrabold text-muted sm:inline">How soon do you want to know?</span>
-      <div className="flex items-center gap-1 rounded-full border-[3px] border-bark bg-sand p-1">
+    // Stacked, and the row wraps. Side by side, the label and the buttons were
+    // wider than the space at any realistic window and sat on top of each other.
+    <div className="flex max-w-full flex-col items-center gap-1.5">
+      <span className="on-world text-[13px] font-extrabold">How soon do you want to know?</span>
+      <div className="flex max-w-full flex-wrap items-center justify-center gap-1 rounded-[22px] border-[3px] border-bark bg-sand p-1">
         <button
           type="button"
           onClick={choose(null)}

@@ -178,8 +178,22 @@ export function formatCoinsWithUnit(amount: number): string {
 export function formatRoundLength(intervalSec: number): string {
   if (intervalSec < 3600) return `${Math.round(intervalSec / 60)} min`;
   const hours = Math.round(intervalSec / 3600);
-  return hours === 24 ? "1 day" : `${hours}h`;
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "1 day" : `${days} days`;
 }
+
+/**
+ * The longest round worth offering as a choice: one day.
+ *
+ * The venue also runs rounds measured in weeks. They are real and the game will
+ * happily settle one, but a farm with eight calls a day and coins that expire
+ * inside a week has no use for a call that answers in six — and putting it in a
+ * row of buttons invites someone to pick it by accident. Longer rounds stay
+ * reachable as the fallback when nothing shorter is open; they are just not
+ * advertised as a choice.
+ */
+export const LONGEST_OFFERED_ROUND = 86_400;
 
 /** Whole minutes of build time one unit of Time is worth. */
 export const minutesPerWindow = GAME_WINDOW_SECONDS / 60;
@@ -381,7 +395,7 @@ export function buildView({ rules, state, playerId, address, windows, now, entri
       roundSettlesInSeconds: null,
       windowId,
       coinsExpiringSoon: 0,
-      roundLengths: availableIntervals(windows),
+      roundLengths: availableIntervals(windows).filter((i) => i <= LONGEST_OFFERED_ROUND),
       preferredRoundLength,
       assets: [],
       openCalls: [],
@@ -418,12 +432,20 @@ export function buildView({ rules, state, playerId, address, windows, now, entri
     callsLeftToday,
     dailyCallCap: rules.dailyCallCap,
     secondsLeftInWindow: secondsLeftInWindow(now),
-    roundSettlesInSeconds: windows.length
-      ? Math.min(...windows.map((w) => Math.max(0, w.expiry - nowSeconds)))
-      : null,
+    // The clock the player is actually waiting on. Once they have chosen a
+    // length, showing the soonest round instead said "under a minute" beside a
+    // five-minute selection, which is simply the wrong number for the call they
+    // are about to make.
+    roundSettlesInSeconds: (() => {
+      const relevant = preferredRoundLength === null
+        ? windows
+        : windows.filter((w) => w.intervalSec === preferredRoundLength);
+      const pool = relevant.length ? relevant : windows;
+      return pool.length ? Math.min(...pool.map((w) => Math.max(0, w.expiry - nowSeconds))) : null;
+    })(),
     windowId,
     coinsExpiringSoon,
-    roundLengths: availableIntervals(windows),
+    roundLengths: availableIntervals(windows).filter((i) => i <= LONGEST_OFFERED_ROUND),
     preferredRoundLength,
     assets: assetOptions(rules, p, windows, callsLeftToday, now, entries),
     openCalls: calls.filter((c) => c.outcome === "open").reverse(),
