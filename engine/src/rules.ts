@@ -51,6 +51,25 @@ export interface Rules {
   /** With riskScaledReward: units = rewardPerCall * min(maxRewardMultiplier, (1 - entryPrice) / riskBaselinePrice). */
   riskBaselinePrice: number;
   maxRewardMultiplier: number;
+  /**
+   * The least a correct call may ever pay.
+   *
+   * Risk scaling is what stops a player calling a round that is already decided
+   * and collecting a full reward for no read. Taken alone it also means a
+   * correct call entered very late pays a number so small it reads as nothing:
+   * an entry at 0.98 earns 0.04 units, and the player who called it right is
+   * told they earned zero. They cannot see prices, so they have no way to have
+   * known. The floor keeps the discouragement while making sure being right is
+   * always worth something the player can see. 0 restores the pure scaling.
+   *
+   * Sized deliberately at the sniper's own entry. A player who waits until a
+   * round is all but decided enters around 0.95, which the curve already pays
+   * 0.1, so a floor of 0.1 hands that player nothing extra: seasons simulated
+   * on five seeds put the sniper on exactly the same tier with the floor on and
+   * off. A floor of 0.25 does not hold that line — it pays the sniper two and a
+   * half times over and lifts it to the casual player's tier on every seed.
+   */
+  minRewardUnits: number;
   /** Time units auto-apply to the farm's running build on settlement; if none, they are lost. */
   timeAutoApplies: boolean;
   /** Time left over after applying to running builds goes to Player.timeBank (never expires) instead of being lost.
@@ -92,6 +111,7 @@ export const SPEC_RULES: Rules = {
   riskScaledReward: false,
   riskBaselinePrice: 1,       // plain (1 - p) when riskScaledReward is on
   maxRewardMultiplier: Infinity,
+  minRewardUnits: 0,          // the spec sets no floor
   timeAutoApplies: true,
   timeBanks: false,
   voidRefundsCall: false,
@@ -142,15 +162,23 @@ export const LOCKED_RULES: Rules = {
   riskScaledReward: true,       // 0.5 entry pays 1, 0.2 pays 1.6, 0.9 pays 0.2
   riskBaselinePrice: 0.5,
   maxRewardMultiplier: 2,
+  minRewardUnits: 0.1,          // a correct call is never worth nothing visible, and never rewards sniping
   timeAutoApplies: true,
   timeBanks: true,
   voidRefundsCall: true,
 };
 
-/** Reward units for a correct call entered at `entryPrice` (probability of the chosen side). */
+/**
+ * Reward units for a correct call entered at `entryPrice` (probability of the
+ * chosen side), never less than `minRewardUnits`.
+ *
+ * The floor applies only to a call that was actually right. A wrong call pays
+ * nothing and never reaches here, and a voided round pays `voidReward`.
+ */
 export function rewardUnits(rules: Rules, entryPrice: number): number {
   if (!rules.riskScaledReward) return rules.rewardPerCall;
-  return rules.rewardPerCall * Math.min(rules.maxRewardMultiplier, (1 - entryPrice) / rules.riskBaselinePrice);
+  const scaled = rules.rewardPerCall * Math.min(rules.maxRewardMultiplier, (1 - entryPrice) / rules.riskBaselinePrice);
+  return Math.max(rules.minRewardUnits, scaled);
 }
 
 export function upgradeFrom(rules: Rules, tier: number): UpgradeDef | undefined {

@@ -118,6 +118,30 @@ const EQUIPMENT_LABELS: Record<EquipmentId, string> = {
   shed: "Shed",
 };
 
+/**
+ * A coin amount as the player should read it: "3", "1.6", "0.1".
+ *
+ * Rewards are fractional, so a display that rounds to whole numbers tells a
+ * player who just earned 0.1 Coins that they earned nothing, and a balance of
+ * 0.9 that they have none. Both were real: a correct call once showed "+0 Coins"
+ * and the bar sat at 0 while coins were genuinely accumulating.
+ *
+ * So: whole numbers stay whole, anything else keeps up to two decimals with the
+ * trailing zeros trimmed, and a real amount never renders as "0".
+ */
+export function formatCoins(amount: number): string {
+  if (amount === 0) return "0";
+  const rounded = Math.round(amount * 100) / 100;
+  // Smaller than two decimals can show. Saying "0" would be the original lie.
+  if (rounded === 0) return amount > 0 ? "0.01" : "-0.01";
+  return String(rounded);
+}
+
+/** "1 Coin" / "2 Coins" / "0.1 Coins", with the number formatted honestly. */
+export function formatCoinsWithUnit(amount: number): string {
+  return `${formatCoins(amount)} ${amount === 1 ? "Coin" : "Coins"}`;
+}
+
 /** Whole minutes of build time one unit of Time is worth. */
 export const minutesPerWindow = GAME_WINDOW_SECONDS / 60;
 
@@ -211,7 +235,7 @@ function farmView(rules: Rules, p: Player, farm: Player["farms"][number], coins:
     let blockedReason: string | null = null;
     if (farm.build) blockedReason = "Something is already building.";
     else if (capped) blockedReason = "Needs new equipment first.";
-    else if (!affordable) blockedReason = `Needs ${up.cost} Coins. You have ${Math.floor(coins)}.`;
+    else if (!affordable) blockedReason = `Needs ${up.cost} Coins. You have ${formatCoins(coins)}.`;
     upgrade = { targetTier: farm.tier + 1, cost: up.cost, windows: up.windows, affordable, blockedReason };
   }
 

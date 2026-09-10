@@ -5,7 +5,7 @@
 
 import { Panel } from "../kit.tsx";
 import { ClockIcon, CoinIcon, ExternalIcon } from "../icons.tsx";
-import { formatWindows } from "../../game/view.ts";
+import { formatCoinsWithUnit, formatWindows } from "../../game/view.ts";
 import type { CallView } from "../../game/view.ts";
 import { txLink } from "../../chain/exchange.ts";
 
@@ -27,7 +27,7 @@ export function SettlementOverlay({ call, onDismiss }: Props) {
   let reward: string | null = null;
   if (right && call.reward) {
     reward = paysCoins
-      ? `+${Math.round(call.reward.amount * 10) / 10} ${call.reward.amount === 1 ? "Coin" : "Coins"}`
+      ? `+${formatCoinsWithUnit(call.reward.amount)}`
       : `+${formatWindows(call.reward.amount)}`;
   } else if (voided) reward = "Your call came back";
 

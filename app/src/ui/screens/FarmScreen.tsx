@@ -2,7 +2,7 @@
 
 import { Chunky, Label, Note, Panel, ProgressBar, AssetBadge, cx } from "../kit.tsx";
 import { CheckIcon, ClockIcon, CoinIcon, CrossIcon, DownIcon, ExternalIcon, UpIcon, EQUIPMENT_ICONS } from "../icons.tsx";
-import { formatWindows } from "../../game/view.ts";
+import { formatCoinsWithUnit, formatWindows } from "../../game/view.ts";
 import type { CallView, EquipmentOption, FarmView } from "../../game/view.ts";
 import { useGame } from "../../game/useGame.tsx";
 import { txLink } from "../../chain/exchange.ts";
@@ -125,7 +125,7 @@ function CallRow({ call }: { call: CallView }) {
   let text = "Missed";
   if (right && call.reward) {
     text = call.reward.kind === "coins"
-      ? `Right, +${Math.round(call.reward.amount * 10) / 10} ${call.reward.amount === 1 ? "Coin" : "Coins"}`
+      ? `Right, +${formatCoinsWithUnit(call.reward.amount)}`
       : `Right, +${formatWindows(call.reward.amount)}`;
   } else if (voided) text = "Round cancelled, call refunded";
 

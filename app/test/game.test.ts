@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { LOCKED_RULES, initialState, reduce, type Event, type GameState } from "farm-engine";
 import { currentWindowId } from "../src/chain/clock.ts";
 import { openMarketIds, redeemablePairs, settlementEvents, tickEvent } from "../src/game/loop.ts";
-import { buildView, formatCountdown, formatWait, formatWindows } from "../src/game/view.ts";
+import { buildView, formatCoins, formatCoinsWithUnit, formatCountdown, formatWait, formatWindows } from "../src/game/view.ts";
 import type { LiveWindow, Settlement } from "../src/chain/types.ts";
 
 const R = LOCKED_RULES;
@@ -106,6 +106,29 @@ test("Time reads as hours and minutes, never as a count of windows", () => {
   assert.equal(formatWindows(4), "1h");
   assert.equal(formatWindows(3), "45m");
   assert.equal(formatWindows(0), "none yet");
+});
+
+
+test("a coin amount never reads as nothing when it is something", () => {
+  // The bug this exists to stop: a correct call paid 0.1 Coins and the overlay
+  // showed "+0 Coins", and the bar showed 0 while coins were really adding up.
+  assert.equal(formatCoins(0.1), "0.1");
+  assert.equal(formatCoins(0.25), "0.25");
+  assert.equal(formatCoins(1.6), "1.6");
+
+  // Whole numbers stay whole. Nobody wants "3.00 Coins".
+  assert.equal(formatCoins(3), "3");
+  assert.equal(formatCoins(0), "0");
+
+  // Two decimals is as fine as the display goes, but a real amount below that
+  // still must not print as zero.
+  assert.equal(formatCoins(0.004), "0.01");
+  assert.equal(formatCoins(1.666), "1.67");
+
+  // The unit agrees with the number.
+  assert.equal(formatCoinsWithUnit(1), "1 Coin");
+  assert.equal(formatCoinsWithUnit(0.1), "0.1 Coins");
+  assert.equal(formatCoinsWithUnit(2), "2 Coins");
 });
 
 test("the round countdown is minutes and seconds", () => {

@@ -2,7 +2,7 @@
 
 import { CallPips, Pill, cx } from "./kit.tsx";
 import { ClockIcon, CoinIcon, WheatIcon } from "./icons.tsx";
-import { formatWindows } from "../game/view.ts";
+import { formatCoins, formatWindows } from "../game/view.ts";
 import type { GameView } from "../game/view.ts";
 
 export type Tab = "call" | "farm" | "board";
@@ -36,10 +36,10 @@ export function Hud({ view, tab, onTab, flash }: HudProps) {
 
         <Pill className={cx(flash === "coins" && "animate-flash")}>
           <span className="text-gold-ink"><CoinIcon size={20} /></span>
-          <span className="tnum">{Math.floor(view.coins)}</span>
+          <span className="tnum">{formatCoins(view.coins)}</span>
           {view.coinsExpiringSoon > 0 ? (
             <span className="hidden text-xs font-bold text-faint lg:inline">
-              {Math.floor(view.coinsExpiringSoon)} expire soon
+              {formatCoins(view.coinsExpiringSoon)} expire soon
             </span>
           ) : (
             <span className="hidden text-xs font-bold text-faint lg:inline">Coins</span>

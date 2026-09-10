@@ -208,14 +208,49 @@ const L = LOCKED_RULES;
 const WHEAT = `${P}:wheat`;
 function upgrade(): Event { return { type: "START_UPGRADE", playerId: P, farmId: WHEAT }; }
 
-test("LOCKED reward: min(2, (1 - p) / 0.5) -> 0.5 pays 1, 0.2 pays 1.6, 0.9 pays 0.2, cap 2", () => {
+test("LOCKED reward: min(2, (1 - p) / 0.5) -> 0.5 pays 1, 0.2 pays 1.6, cap 2", () => {
   assert.ok(Math.abs(rewardUnits(L, 0.5) - 1) < 1e-9);
   assert.ok(Math.abs(rewardUnits(L, 0.2) - 1.6) < 1e-9);
-  assert.ok(Math.abs(rewardUnits(L, 0.9) - 0.2) < 1e-9);
+  assert.ok(Math.abs(rewardUnits(L, 0.8) - 0.4) < 1e-9, "scaling still bites well above the baseline");
   assert.ok(Math.abs(rewardUnits(L, 0.01) - 1.98) < 1e-9, "cap of 2 is only reached at p -> 0");
   assert.equal(rewardUnits({ ...L, riskBaselinePrice: 0.25 }, 0.1), 2, "cap binds");
   const s = run(L, [join(), call("a", "m", "up", 0.2), settle("m", "up", 1)]);
   assert.ok(Math.abs(s.players[P]!.stats.coinsEarned - 1.6) < 1e-9);
+});
+
+test("LOCKED: a correct call is never worth nothing the player can see", () => {
+  // A player who calls a round that is nearly decided has read almost nothing,
+  // and the scaling says so. But they cannot see prices, so paying them 0.04 and
+  // showing it as zero tells a player who was RIGHT that being right did nothing.
+  assert.ok(Math.abs(rewardUnits(L, 0.98) - 0.1) < 1e-9, "an all-but-settled round still pays the floor");
+  assert.ok(Math.abs(rewardUnits(L, 0.999) - 0.1) < 1e-9, "and it cannot be driven below the floor");
+
+  // It reaches the farm, not just the formula.
+  const s = run(L, [join(), call("a", "m", "up", 0.98), settle("m", "up", 1)]);
+  assert.ok(Math.abs(s.players[P]!.stats.coinsEarned - 0.1) < 1e-9);
+
+  // A wrong call is still worth nothing: the floor rewards being right, not turning up.
+  const wrong = run(L, [join(), call("b", "m2", "up", 0.98), settle("m2", "down", 1)]);
+  assert.equal(wrong.players[P]!.stats.coinsEarned, 0);
+
+  // A void pays voidReward, which LOCKED sets to zero. The floor must not leak in.
+  const voided = run(L, [join(), call("c", "m3", "up", 0.98), settle("m3", "void", 1)]);
+  assert.equal(voided.players[P]!.stats.coinsEarned, 0, "a cancelled round is not a correct call");
+
+  // Without the floor the number is the one that displayed as "+0 Coins".
+  assert.ok(rewardUnits({ ...L, minRewardUnits: 0 }, 0.98) < 0.05);
+});
+
+test("LOCKED: the floor sits at the sniper's entry, so it pays sniping nothing extra", () => {
+  // The floor has to make a correct call visible without quietly undoing the
+  // risk scaling that discourages waiting for a decided round. A sniper enters
+  // around 0.95, which the curve already pays 0.1 — so at 0.1 the floor never
+  // binds for them. Seasons simulated across five seeds put the sniper on the
+  // same tier with the floor on and off; at 0.25 it gains a tier on every seed.
+  assert.ok(Math.abs(rewardUnits(L, 0.95) - 0.1) < 1e-9, "the curve, not the floor, still decides at 0.95");
+  assert.ok(rewardUnits(L, 0.9) > 0.1, "and everything below it is pure curve");
+  assert.ok(Math.abs(rewardUnits({ ...L, minRewardUnits: 0 }, 0.95) - rewardUnits(L, 0.95)) < 1e-9,
+    "a sniper is paid exactly what they were paid before the floor existed");
 });
 
 test("LOCKED: first build completes after one correct Up call at a 0.5 entry", () => {
