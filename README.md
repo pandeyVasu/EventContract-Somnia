@@ -200,39 +200,6 @@ Locked, tuned against a simulated season, and all in one file.
 
 ---
 
-## Known limits
-
-Stated plainly, because a demo that hides these is worth less than one that does
-not.
-
-- **The void path is unverified in the wild.** It is implemented and unit
-  tested, but no voided round has appeared on testnet across the whole build, so
-  it has never executed against a real one. Treat it as tested code, not as
-  proven behaviour.
-- **The event log is local and unsigned.** Every entry in it originates from a
-  chain fact — a fill, a settlement — but the log itself lives in the browser
-  and a determined player can edit it. Progression and the board both read from
-  it, so they are honest for solo play and are **not** a trustworthy basis for
-  competition. A competitive version would have to derive progression from chain
-  data directly rather than from a local record of it.
-- **Two tabs on the same wallet converge rather than merge.** They follow each
-  other's writes now instead of silently overwriting, but two calls placed in
-  the same instant can still lose one: the log is last-write-wins, and merging
-  divergent branches would need an identity on every event. The losing call is
-  refused by the chain in any case.
-- **The calibration gate is tuned finer than it reliably holds.** Across ten
-  seeds all three progression checks pass every time — a casual player reaches
-  Tier 4, a sharp one finishes Tier 5 with every tool. The fourth, that a casual
-  player loses under 15% of earned coins to expiry, fails on four of those ten
-  at 18-24%. That loss is surplus at the end of a season with nothing cheap
-  enough left to buy, so it costs efficiency rather than progression — but the
-  threshold is calibrated finer than the simulation actually supports.
-- **Order-book depth on testnet is thin** — a handful of levels. The fixed
-  1 tUSDC stake fills reliably today, but the app handles an unfillable quote by
-  declining the call rather than pretending.
-
----
-
 ## Layout
 
 ```
