@@ -26,7 +26,7 @@ export function TitleScreen() {
       */}
       <div className="absolute inset-0 overflow-y-auto">
         <div className="flex min-h-full items-center px-[6vw] py-10">
-          <div className="flex w-full max-w-[600px] flex-col gap-6 md:w-[52vw]">
+          <main className="flex w-full max-w-[600px] flex-col gap-6 md:w-[52vw]" aria-label="Welcome to Harvest Call">
         <div className="flex items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border-[3px] border-bark bg-terracotta text-cream shadow-drop">
             <WheatIcon size={32} />
@@ -80,14 +80,14 @@ export function TitleScreen() {
               href="https://testnet.somnia.network"
               target="_blank"
               rel="noreferrer"
-              className="font-extrabold text-terracotta underline"
+              className="font-extrabold text-terracotta-dark underline"
             >
               testnet.somnia.network
             </a>
             , then press Get test funds.
           </Note>
             </Panel>
-          </div>
+          </main>
         </div>
       </div>
     </div>
