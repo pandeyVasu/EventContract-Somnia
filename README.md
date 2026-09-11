@@ -81,7 +81,7 @@ spike/    Headless Node scripts that prove the chain path against testnet.
 The separation is the point, and it is enforced rather than merely intended:
 
 - **`engine/`** knows nothing about wallets, markets or React. It is validated by
-  33 unit tests and a 28-day season simulation with a calibration gate, so a
+  34 unit tests and a 28-day season simulation with a calibration gate, so a
   change to a reward number is checked against a whole season before it ships.
   Every tunable number lives in `engine/src/rules.ts`.
 - **`app/src/chain/`** turns on-chain facts into exactly two engine events,
@@ -116,8 +116,8 @@ npm run dev -w app        # http://localhost:5173
 Other commands:
 
 ```bash
-npm test -w engine        # 33 rules tests
-npm test -w app           # 69 adapter, store and view tests
+npm test -w engine        # 34 rules tests
+npm test -w app           # 73 adapter, store, view and queue tests
 npm run typecheck -w app
 npm run build -w app
 npm run sim -w engine     # season simulation + calibration gate
@@ -197,6 +197,97 @@ Locked, tuned against a simulated season, and all in one file.
 - **Coins expire** after a week of game windows. Time banks and never expires.
 - **A voided round pays nothing and gives the call back**, credited to the day it
   was placed rather than the day it settled.
+
+---
+
+## Testing and verification
+
+Three layers, because they answer different questions: the tests say the rules
+do what they say, the simulation says the numbers make a playable season, and
+the on-chain runs say the whole thing works against a real venue.
+
+### Automated
+
+| | |
+|---|---|
+| `npm test -w engine` | **34 passing** — rules, rewards, expiry, the hedge and sniper exploits, the reward floor, the resolved-market guard |
+| `npm test -w app` | **73 passing** — 30 chain-adapter tests against a fake exchange, 43 store, view, loop and redemption-queue tests |
+| `npm run typecheck` in each workspace | clean across `engine`, `app` and `spike` |
+| `npm run build -w app` | clean production build |
+
+No mocking framework and no test runner dependency: `node:test` throughout, and
+the adapter tests drive a hand-written fake exchange, so the suite runs on a
+clean checkout with nothing installed beyond the app's own dependencies.
+
+### The season simulation
+
+`npm run sim -w engine` plays **28 days of 15-minute windows** — 2,688 windows,
+each carrying a Bitcoin and an Ethereum round, so 5,376 rounds in all — for
+seven player archetypes, then checks the result against a calibration gate. It exists so a change to a reward number is measured against
+a whole season rather than argued about.
+
+The archetypes include two written specifically to break the rules rather than
+play them: a **hedger** that calls Up and Down on the same market, and a
+**sniper** that only calls rounds already decided. Both are meant to fail, and
+the gate would notice if a tuning change made either profitable.
+
+Measured across ten seeds:
+
+| Check | Result |
+|---|---|
+| A casual player (55%, 4 calls/day) reaches Wheat Tier 4 | passes on **10 of 10** |
+| A sharp player (65%, 8 calls/day) finishes Tier 5 | passes on **10 of 10** |
+| A sharp player owns all three pieces of equipment | passes on **10 of 10** |
+| A casual player loses under 15% of earned coins to expiry | passes on **6 of 10**, otherwise 18–24% |
+
+Progression is solid on every seed tested. The fourth check is an efficiency
+measure rather than a progression one — it counts surplus coins left over at the
+end of a season with nothing cheap enough left to buy — and its threshold is
+tuned finer than the simulation reliably supports. It is reported here rather
+than quietly widened.
+
+The reward floor was sized against this simulation. A floor of 0.25 units lifted
+the sniper a full tier on every seed, level with a player who actually reads the
+market; 0.1 leaves it bit-for-bit unchanged, because 0.1 is what the risk curve
+already pays at a sniper's entry. That is why the number is 0.1.
+
+### Against the live chain
+
+`spike/` runs the whole path headlessly against Somnia Shannon, with no browser
+involved. `spike/RESULTS.md` carries the run log and every transaction hash.
+
+**All three demo round lengths, end to end.**
+`node --env-file=../.env src/combo.ts --place --watch` discovers the 1-, 5- and
+15-minute rounds, places one real call on each with the direction and asset
+alternating, follows every one to settlement and redeems the winners. Two runs:
+**six calls, six settlements, three redemptions, no retries and no voids.**
+
+| Round | Asset | Call | Mode | Entry | Result |
+|---|---|---|---|---|---|
+| 1 min | BTC | Up | fixed | 0.718 | won, redeemed |
+| 5 min | BTC | Down | reference | 0.434 | lost |
+| 15 min | BTC | Up | reference | 0.968 | won, redeemed |
+| 1 min | BTC | Up | fixed | 0.021 | lost |
+| 5 min | ETH | Down | reference | 0.608 | lost |
+| 15 min | BTC | Up | reference | 0.383 | won, redeemed |
+
+**That one-minute rounds are genuine direction calls.**
+They are `fixed` mode, which asks whether the price ended at or above a strike —
+the same question as "did it go up" only if that strike is the price at the
+round's open. Nothing publishes the price a round settled at, so this could not
+be read off directly. But rounds are contiguous, each one's trading start being
+the previous one's expiry, so the *next* round's strike is this round's
+settlement price. Comparing the two against each round's winning outcome across
+live BTC and ETH rounds: **86 of 86 consecutive pairs agree.** A single
+disagreement would have sunk the reading. `src/combo.ts --verify` re-runs that
+check and places no orders.
+
+### Not verified
+
+**The void path.** A voided round pays nothing and refunds the call, and that is
+implemented and unit tested — but no voided round appeared on testnet across the
+whole build, so it has never executed against a real one. It is tested code
+rather than proven behaviour, and is described that way deliberately.
 
 ---
 
